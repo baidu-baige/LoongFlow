@@ -483,7 +483,7 @@ def main() -> None:
     app = create_app(args.checkpoint_path)
 
     if args.debug:
-        app.run(host=args.host, port=args.port, debug=True)
+        app.run(host=args.host, port=args.port, debug=False)
     else:
         try:
             import uvicorn
