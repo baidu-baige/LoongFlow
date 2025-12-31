@@ -1,26 +1,30 @@
 # ReAct Agent Framework
 
-ReAct Agent
-Framework 是 LoongFlow 项目中的核心智能体引擎，实现了经典的 Reason-Act-Observe（推理-执行-观察）架构。该框架提供了一套高度模块化的组件系统，支持构建具有复杂推理能力的 AI 智能体，能够通过多轮迭代的方式解决复杂的任务。
+> Core agent engine of LoongFlow implementing the Reason-Act-Observe paradigm.
 
-## 核心架构
+ReAct Agent Framework is the core intelligent agent engine in the LoongFlow project. It provides a highly modular
+component system for building AI agents with complex reasoning capabilities, solving tasks through multi-turn iterative
+execution.
 
-ReAct 框架将智能体的执行流程抽象为四个核心组件，通过协议接口实现高度解耦：
+## Architecture
+
+The ReAct framework abstracts agent execution into four core components. Each component is defined as a **Protocol**
+interface, with default implementations provided out of the box.
 
 <p align="center">
-<img src="https://evolux-pub.bj.bcebos.com/share/react_agent_architecture.png" alt="ReAct Agent Architecture" width="80%"/>
+  <img src="https://evolux-pub.bj.bcebos.com/share/react_agent_architecture.png" alt="ReAct Agent Architecture" width="80%"/>
 </p>
 
-### 执行流程
+### Execution Flow
 
-1. **Reason（推理）**：分析当前上下文和历史记忆，决定下一步行动策略
-2. **Act（执行）**：根据推理结果调用工具或执行操作
-3. **Observe（观察）**：处理执行结果，准备下一轮推理数据
-4. **Finalize（终结）**：判断任务是否完成，构造最终响应
+1. **Reason** - Analyze current context and decide next action
+2. **Act** - Execute tool calls based on reasoning output
+3. **Observe** - Process action results for next iteration
+4. **Finalize** - Determine task completion and construct final response
 
-## 快速开始
+## Quick Start
 
-### 基础使用示例
+### Basic Usage
 
 ```python
 from agentsdk.message import Message
@@ -28,44 +32,36 @@ from agentsdk.models import LiteLLMModel
 from agentsdk.tools import Toolkit
 from evolux.react import ReActAgent
 
-# 创建LLM模型
 model = LiteLLMModel(
     model_name="deepseek-r1",
     base_url="http://your-llm-service/v1",
     api_key="******"
 )
 
-toolkit = Toolkit()
-
-# 创建默认配置的ReAct智能体
+# Create ReAct agent with default components
 agent = ReActAgent.create_default(
     model=model,
-    sys_prompt="你是一个专业的数学问题求解助手",
-    toolkit=toolkit,  # 可选：工具集
-    max_steps=10  # 最大迭代次数
+    sys_prompt="You are a professional math problem solving assistant.",
+    toolkit=Toolkit(),
+    max_steps=10
 )
 
-# 执行任务
-initial_message = Message.from_text("求解方程 x^2 + 2x + 1 = 0")
-result = await agent.run(initial_message)
+result = await agent.run(Message.from_text("Solve the equation x^2 + 2x + 1 = 0"))
 ```
 
-### 创建自定义 ReAct 智能体
+### Custom Components
 
 ```python
-from agentsdk.message import Message
 from evolux.react import ReActAgent, AgentContext
-from evolux.react.components import Reasoner, Actor, Observer, Finalizer
+from evolux.react.components import Reasoner
 
 
-# 自定义组件
 class CustomReasoner(Reasoner):
     async def reason(self, context: AgentContext) -> Message:
-        # 自定义推理逻辑
+        # Your custom reasoning logic
         pass
 
 
-# 构建完整智能体
 agent = ReActAgent(
     context=agent_context,
     reasoner=custom_reasoner,
@@ -76,41 +72,76 @@ agent = ReActAgent(
 )
 ```
 
-## 核心组件
+## Component Protocols & Default Implementations
 
-### Reasoner（推理器）
+### Reasoner
 
-**职责**：分析当前状态，规划下一步行动
+Analyzes current context and decides on the next action.
+
+**Protocol:**
+
+```python
+class Reasoner(Protocol):
+    async def reason(self, context: AgentContext) -> Message:
+        """Reason the current context and decide on the next action."""
+        ...
+```
+
+**Default Implementation:**
 
 ```python
 from evolux.react.components import DefaultReasoner
 
 reasoner = DefaultReasoner(
     model=llm_model,
-    system_prompt="系统提示词"
+    system_prompt="Your system prompt"
 )
 ```
 
-### Actor（执行器）
+### Actor
 
-**职责**：执行工具调用，默认提供了顺序执行和并行执行功能
+Executes the actions decided by the Reasoner (e.g., tool calls).
 
-- `SequenceActor`：顺序执行工具调用
-- `ParallelActor`：并行执行工具调用
+**Protocol:**
+
+```python
+class Actor(Protocol):
+    async def act(
+        self, context: AgentContext, tool_calls: List[ToolCallElement]
+    ) -> List[Message]:
+        """Execute the actions decided by the Reasoner."""
+        ...
+```
+
+**Default Implementations:**
+
+| Class           | Description                     |
+|-----------------|---------------------------------|
+| `SequenceActor` | Execute tool calls sequentially |
+| `ParallelActor` | Execute tool calls in parallel  |
 
 ```python
 from evolux.react.components import SequenceActor, ParallelActor
 
-# 顺序执行器
-actor = SequenceActor()
-
-# 并行执行器
-actor = ParallelActor()
+actor = SequenceActor()  # or ParallelActor()
 ```
 
-### Observer（观察器）
+### Observer
 
-**职责**：处理执行结果，为下一轮推理做准备
+Processes action results and prepares them for the next reasoning step.
+
+**Protocol:**
+
+```python
+class Observer(Protocol):
+    async def observe(
+        self, context: AgentContext, tool_outputs: List[Message]
+    ) -> Message | None:
+        """Observe action results and prepare for next reasoning step."""
+        ...
+```
+
+**Default Implementation:**
 
 ```python
 from evolux.react.components import DefaultObserver
@@ -118,29 +149,51 @@ from evolux.react.components import DefaultObserver
 observer = DefaultObserver()
 ```
 
-### Finalizer（终结器）
+### Finalizer
 
-**职责**：判断任务完成状态，生成最终响应
+Determines if the task is complete and constructs the final response.
+
+**Protocol:**
+
+```python
+class Finalizer(Protocol):
+    @property
+    def answer_schema(self) -> FunctionTool:
+        """The schema of the special 'final answer' tool."""
+        ...
+
+    async def resolve_answer(
+        self,
+        tool_call: ToolCallElement,
+        tool_output: ToolOutputElement,
+    ) -> Message | None:
+        """Resolve a tool interaction into the final answer."""
+        ...
+
+    async def summarize_on_exceed(
+        self, context: AgentContext, **kwargs
+    ) -> Message | None:
+        """Summarize when react loop exceeds max_steps."""
+        ...
+```
+
+**Default Implementation:**
 
 ```python
 from evolux.react.components import DefaultFinalizer
 
 finalizer = DefaultFinalizer(
     model=llm_model,
-    summarize_prompt="总结提示词",
-    output_schema=OutputModel
+    summarize_prompt="Your summarization prompt",
+    output_schema=OutputModel  # Optional
 )
 ```
 
-## ⚙️ 配置与定制
+## Configuration
 
-### AgentContext（上下文管理）
+### AgentContext
 
-管理智能体的运行状态和资源：
-
-- **Memory**：对话历史记忆管理
-- **Toolkit**：工具集管理
-- **执行状态**：当前步骤、最大步骤限制
+Manages agent runtime state and resources:
 
 ```python
 from evolux.react import AgentContext
@@ -152,12 +205,11 @@ context = AgentContext(
 )
 ```
 
-### 钩子系统
+### Hook System
 
-支持多种钩子类型，实现执行流程的深度定制：
+Customize execution flow at various stages:
 
 ```python
-# 支持的钩子类型
 supported_hook_types = [
     "pre_run", "post_run",
     "pre_reason", "post_reason",
@@ -166,61 +218,54 @@ supported_hook_types = [
 ]
 ```
 
-## 高级特性
+## Advanced Features
 
-### 中断处理
-
-支持智能体执行过程中的中断控制：
+### Interrupt Handling
 
 ```python
 async def custom_interrupt_handler(context: AgentContext):
-    # 自定义中断逻辑
+    # Custom interrupt logic
     pass
 
 
 agent.register_interrupt(custom_interrupt_handler)
 ```
 
-### 记忆管理
+### Memory Management
 
-与 agentsdk 的 GradeMemory 集成，支持智能记忆管理：
+Integrates with agentsdk's GradeMemory:
 
-- 对话历史持久化
-- 执行状态跟踪
-- 经验积累和学习
+- Conversation history persistence
+- Execution state tracking
+- Experience accumulation
 
-### 工具集成
+### Tool Integration
 
-无缝集成 agentsdk 工具系统，支持：
+Seamlessly integrates with agentsdk tool system:
 
-- 动态工具注册
-- 参数验证
-- 错误处理
-- 批量执行
+- Dynamic tool registration
+- Parameter validation
+- Error handling
 
-## 📁 文件结构
+## File Structure
 
 ```
 src/evolux/react/
-├── components/           # 核心组件实现
-│   ├── base.py          # 组件协议定义
+├── components/
+│   ├── base.py              # Protocol definitions
 │   ├── default_reasoner.py
 │   ├── default_actor.py
 │   ├── default_observer.py
 │   └── default_finalizer.py
-├── context.py           # 上下文管理
-├── react_agent_base.py  # 智能体基类
-├── react_agent.py       # 主要智能体实现
+├── context.py
+├── react_agent_base.py
+└── react_agent.py
 ```
 
-## 🎯 在 LoongFlow 框架中的角色
+## Role in LoongFlow
 
-ReAct 框架是 LoongFlow 进化算法的核心执行引擎：
+ReAct framework serves as the core execution engine in LoongFlow:
 
-- **Planner 阶段**：使用 ReAct 进行任务分析和规划生成
-- **Executor 阶段**：通过 ReAct 执行具体的解决方案优化
-- **Summary 阶段**：运用 ReAct 进行经验总结和记忆更新
-
----
-
-ReAct Agent Framework 为构建复杂的 AI 智能体提供了坚实的架构基础，通过模块化设计和协议接口，确保了框架的灵活性和可扩展性。
+- **Planner Stage** - Task analysis and plan generation
+- **Executor Stage** - Solution optimization through execution
+- **Summary Stage** - Experience summarization and memory updates
