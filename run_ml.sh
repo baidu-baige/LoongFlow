@@ -38,6 +38,56 @@ error() {
     exit 1
 }
 
+# Initialize conda/mamba for shell usage
+init_conda() {
+    # Find conda/mamba installation
+    local conda_base=""
+
+    if [ -n "${CONDA_EXE:-}" ]; then
+        conda_base="$(dirname "$(dirname "$CONDA_EXE")")"
+    elif [ -n "${MAMBA_EXE:-}" ]; then
+        conda_base="$(dirname "$(dirname "$MAMBA_EXE")")"
+    elif command -v mamba >/dev/null 2>&1; then
+        conda_base="$(mamba info --base 2>/dev/null || conda info --base 2>/dev/null)"
+    elif command -v conda >/dev/null 2>&1; then
+        conda_base="$(conda info --base 2>/dev/null)"
+    else
+        error "Neither conda nor mamba found. Please install mambaforge or miniconda first."
+    fi
+
+    # Source conda.sh to enable activate command
+    if [ -f "$conda_base/etc/profile.d/conda.sh" ]; then
+        source "$conda_base/etc/profile.d/conda.sh"
+    else
+        error "Cannot find conda.sh at $conda_base/etc/profile.d/conda.sh"
+    fi
+
+    # Also source mamba.sh if available
+    if [ -f "$conda_base/etc/profile.d/mamba.sh" ]; then
+        source "$conda_base/etc/profile.d/mamba.sh"
+    fi
+}
+
+# Activate the target environment and set up LD_LIBRARY_PATH
+activate_env() {
+    init_conda
+
+    info "Activating environment: $ENV_NAME"
+    mamba activate "$ENV_NAME" 2>/dev/null || conda activate "$ENV_NAME"
+
+    if [ "$CONDA_DEFAULT_ENV" != "$ENV_NAME" ]; then
+        error "Failed to activate environment '$ENV_NAME'"
+    fi
+
+    # Set LD_LIBRARY_PATH to include conda environment's lib directory
+    if [ -n "${CONDA_PREFIX:-}" ]; then
+        export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        info "LD_LIBRARY_PATH set to: $LD_LIBRARY_PATH"
+    else
+        warning "CONDA_PREFIX not set, LD_LIBRARY_PATH may not be configured correctly"
+    fi
+}
+
 # Recursively get all child processes
 get_descendants() {
     local parent="$1"
@@ -102,9 +152,11 @@ do_init() {
 
     success "Conda environment '$ENV_NAME' is ready."
 
-    info "Installing common requirements in environment '$ENV_NAME'..."
+    # Activate environment and install packages
+    activate_env
 
-    mamba run -n "$ENV_NAME" python -u -m pip install --no-build-isolation -r "$pip_file"
+    info "Installing common requirements in environment '$ENV_NAME'..."
+    python -u -m pip install --no-build-isolation -r "$pip_file"
 
     cd "$SCRIPT_DIR"
 
@@ -189,10 +241,14 @@ do_run() {
         fi
     fi
 
-    # --- Build command array ---
+    # --- Activate environment (this also sets LD_LIBRARY_PATH) ---
+    activate_env
+
+    # --- Set PYTHONPATH ---
     export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$SCRIPT_DIR:$SCRIPT_DIR/src"
+
+    # --- Build command array ---
     local command_array=(
-        "mamba" "run" "-n" "$ENV_NAME" "--no-capture-output"
         "python3" "-u" "$evolve_script"
         "--config" "$task_config"
         "--task-data-path" "$task_data_path"
@@ -208,7 +264,9 @@ do_run() {
     echo "=================================================================="
     info "Starting ML-Evolve Agent"
     echo "📋 Task Name: $task_name"
-    echo "🔧 Environment: $ENV_NAME"
+    echo "🔧 Environment: $ENV_NAME (activated)"
+    echo "🔧 CONDA_PREFIX: ${CONDA_PREFIX:-not set}"
+    echo "🔧 LD_LIBRARY_PATH: ${LD_LIBRARY_PATH:-not set}"
     echo "📁 Task Directory: $task_dir"
     echo "📁 Task Data: $task_data_path"
     echo "📝 Config: $task_config"
