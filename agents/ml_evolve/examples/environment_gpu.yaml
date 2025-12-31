@@ -1,0 +1,59 @@
+name: evolux_ml
+channels:
+  - pytorch
+  - nvidia
+  - rapidsai
+  - conda-forge
+  - defaults
+
+dependencies:
+  # ==================== 1. System Foundation & Build Tools ====================
+  - python=3.11
+  - pip
+  - wheel
+  - setuptools
+  - packaging
+  - ninja
+  - git
+
+  # ==================== 2. CUDA & GPU Core ====================
+  - cuda-version=12.4
+  - cuda-toolkit
+  - cuda-nvcc
+  - cuda-cudart
+  - cuda-libraries
+  - cudnn
+  - nccl
+  - cuda-python
+
+  # ==================== 3. PyTorch & RAPIDS ====================
+  - pytorch::pytorch=2.4.0
+  - pytorch::torchvision=0.19.0
+  - pytorch::torchaudio=2.4.0
+  - pytorch::pytorch-cuda=12.4
+
+  # RAPIDS (cudf and other libraries are highly dependent on system foundation)
+  - rapidsai::cudf
+  - rapidsai::cuml
+  - rapidsai::cugraph
+  - rapidsai::cuspatial
+  - cupy
+  - py-xgboost-gpu=2.1
+  - lightgbm=4.5.0
+  - catboost=1.2.8
+  - faiss-gpu=1.11.0
+
+  # ==================== 4. Scientific Computing Fundamentals ====================
+  - numpy=1.26.4
+  - pandas=2.2.3
+  - scipy=1.16.3
+  - scikit-learn=1.5.2
+  - pyarrow=19.0.1
+  - h5py=3.12.1
+
+  # ==================== 5. System-Level Libraries ====================
+  - opencv=4.10.0
+  - graphviz=12.2.1
+  - python-graphviz=0.21
+  - matplotlib=3.10.8
+  - fasttext==0.9.2

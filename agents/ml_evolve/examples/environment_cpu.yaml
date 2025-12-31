@@ -1,0 +1,43 @@
+name: evolux_ml
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+
+dependencies:
+  # ==================== 1. System Foundation & Build Tools ====================
+  - python=3.11
+  - pip
+  - wheel
+  - setuptools
+  - packaging
+  - ninja
+  - git
+
+  # ==================== 2. PyTorch (CPU Version) ====================
+  - pytorch::pytorch=2.2.0
+  - pytorch::torchvision=0.17.0
+  - pytorch::torchaudio=2.2.0
+  - pytorch::cpuonly
+
+  # ==================== 3. Scientific Computing & Machine Learning Alternative Libraries ====================
+
+  - py-xgboost-cpu=2.1
+  - lightgbm=4.5.0
+  - catboost=1.2.8
+  - faiss-cpu=1.9.0
+
+  # ==================== 4. Scientific Computing Fundamentals ====================
+  - numpy=1.26.4
+  - pandas=2.2.3
+  - scipy=1.13.1
+  - scikit-learn=1.5.2
+  - pyarrow=19.0.1
+  - h5py=3.12.1
+
+  # ==================== 5. System-Level Libraries ====================
+  - opencv=4.10.0
+  - graphviz=12.2.1
+  - python-graphviz=0.21
+  - matplotlib=3.10.0
+  - fasttext=0.9.2

@@ -1,0 +1,217 @@
+# Global directory configuration
+workspace_path: "./output"
+
+# Global LLM configuration (optional)
+# If evaluator or other components do not have their own llm_config, this configuration will be used
+llm_config:
+  url: "http://xxx/v1"
+  api_key: "xxx"
+  model: "deepseek-r1-250528"
+  temperature: 0.8
+  context_length: 128000
+  max_tokens: 32768
+  top_p: 1.0
+  timeout: 1200
+
+# ------------------------------------------------------------------------------
+# Define the configuration for all available components
+# ------------------------------------------------------------------------------
+
+# All available Configuration for Planner
+planners:
+  evolve_planner:
+    # Planner's specific configuration, such as prompt templates, used LLM, etc.
+    react_max_steps: 10
+
+# All available Executor configurations
+executors:
+  evolve_executor:
+    # Executor's specific configuration
+    parallel_candidates: 2
+    max_rounds: 3
+    react_max_steps: 10
+
+  evolve_executor_chat:
+    # ExecutorChat's specific configuration
+    max_rounds: 4
+
+  evolve_executor_fuse:
+    # ExecutorChat's specific configuration
+    react_max_steps: 15
+    score_threshold: 0.93
+    max_rounds: 3
+    chat_system_prompt: |
+      We are currently using an Algorithm Evolve Paradigm (Evolux) to solve an evolve task. In Evolux, there are three phases:
+
+      Phase 1: Planner. Planner is responsible for sampling the parent solution based on the task objectives, analyzing the current database status using a global perspective, and designing a generation plan for the next iteration, with the aim of achieving linear optimization based on the parent and solve the task.
+      Phase 2: Executor. Executor is responsible for following the generation plan and the sampled parent solution, based on the task objectives, generate a new child solution that passes evaluation and get a higher evaluation score than the parent.
+      Phase 3: Summary. Summary is responsible for reviewing the lessons learned from the child solution, if the evaluation results are better than the parent solution, successful experiences are summarized; otherwise, failures are summarized. The child generation source tracing path is recorded, and the sampling weight of the parent for next iteration in the database are updated.
+
+      This achieves a self-evolutionary closed loop across Phases 1, 2 and 3.
+
+      Now You are **Phase 2: Executor** in the Evolux Evolution Paradigm. Your responsibility is to remember the task information and, based on the sampled parent solution and generation plan, generate a child solution which can pass the evaluation.
+
+      VERY IMPORTANT: You MUST remember the task information and ensure that the code is generated strictly followed by the plan.
+      VERY IMPORTANT: You are the SECOND Phase of Evolux, your generated solution is the most important part. If you come up with a bad child solution, which does not pass the evaluation, it will slow down the entire evolutionary process, cause significant losses in time and money, this is UNACCEPTABLE. If this happens, you will be PUNISHED and DISMISSED.
+
+      Code Generation Requirements[VERY IMPORTANT]:
+        Your goal is to maximize the score returned by get_score(), a score greater than 1.17 would be amazing!
+        You must fully implement the search_for_best_set method, and the parameters and return value must be: def search_for_best_set() -> Tuple[np.ndarray, str].
+        In your search_for_best_set function, you may call the get_score method for optimization, with the goal of maximizing the final result score.
+        You must from typing import Tuple, from numba import njit, and other necessary imports.
+        You must use int type, NOT use int64 or uint64.
+        The list returned by your search_for_best_set method may need to include several thousand or even tens of thousands of items; only with such a large dataset is it possible for the get_score() result to exceed 1.17.
+        When generating the code, apart from the search_for_best_set function you implement, you must also return the following code simultaneously. The following code cannot be modified and must be returned exactly as is. The methods get_score and get_score_numba within the code below must remain unchanged. Code:
+
+        def get_score(best_list):
+          """Returns the score for the given list using Numba."""
+          if len(best_list) < 2:
+              return 0
+
+          for i in best_list:
+              if i > 2_000_000_000:
+                  return 0
+
+          # Take the absolute value of the list
+          best_list = [abs(x) for x in best_list]
+
+          # if the list contains non-integers, return 0
+          if not all(isinstance(x, int) for x in best_list):
+              return 0
+
+          return get_score_numba(best_list) + (1.0 - 1.0 / len(set(best_list))) / 100.0
+
+
+      from numba import njit
+      @njit
+      def get_score_numba(best_list):
+          """Returns the score for the given list using Numba."""
+
+          best_list_set = set(best_list)
+          # Add 0 to the set
+          best_list_set.add(0)
+          n_unique = len(best_list_set)
+
+          a_minus_a = set()
+          for i in best_list:
+              for j in best_list:
+                  a_minus_a.add(i - j)
+
+          a_plus_a = set()
+          for i in best_list:
+              for j in best_list:
+                  a_plus_a.add(i + j)
+
+          lhs = len(a_minus_a)
+          rhs = len(a_plus_a)
+
+          denominator = math.log(lhs / rhs)
+
+          # Find the maximum value of best_list_set
+          max_value = max(best_list_set)
+
+          try:
+              return denominator / math.log(2 * max_value + 1) + 1.0
+          except Exception:
+              return 0
+
+# All available Summarizer configurations
+summarizers:
+  evolve_summary:
+    # Summarizer's specific configuration
+    react_max_steps: 10
+# ------------------------------------------------------------------------------
+# Define the main evolution process configuration
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description, is the core objective of the entire evolution process
+  task: |
+    Ruzsa's inequality problem
+
+    Act as an expert software developer and optimization specialist specializing in creating python lists of distinct integers with certain properties. Your task is to find a python list A consisting distinct positive integers with the property that the set A - A is as large as possible, and at the same time the set A + A is as small as possible. Here A + A is the set of all possible sums of two elements of A.
+
+    You may code up any search method you want, and you are allowed to call the get_score() function as many times as you want. You want the score it gives you to be as high as possible!
+
+    Your goal is to make the result of get_score() as large as possible, even exceeding 1.17.
+
+    Your task is to write a search function (search_for_best_set) that searches for the best list. You may choose n, the length of the list, to be anything in this experiment. Larger values of n have more potential for bigger scores, but the search space is larger so they are harder to find. You'll have to balance it accordingly! To beat the state of the art score of 1.17, you will have to consider quite large lists, with many thousands of entries!
+    The list returned by your search_for_best_set method may need to include several thousand or even tens of thousands of items; only with such a large dataset is it possible for the get_score() result to exceed 1.17.
+    Your goal is to maximize the score returned by get_score(), a score greater than 1.17 would be amazing!
+
+    [IMPORTANT]You must write search_for_best_set function and return Tuple[np.ndarray, str] !!!
+
+    get_score method code:
+    def get_score(best_list):
+          """Returns the score for the given list using Numba."""
+          if len(best_list) < 2:
+              return 0
+
+          for i in best_list:
+              if i > 2_000_000_000:
+                  return 0
+
+          # Take the absolute value of the list
+          best_list = [abs(x) for x in best_list]
+
+          # if the list contains non-integers, return 0
+          if not all(isinstance(x, int) for x in best_list):
+              return 0
+
+          return get_score_numba(best_list) + (1.0 - 1.0 / len(set(best_list))) / 100.0
+
+
+      from numba import njit
+      @njit
+      def get_score_numba(best_list):
+          """Returns the score for the given list using Numba."""
+
+          best_list_set = set(best_list)
+          # Add 0 to the set
+          best_list_set.add(0)
+          n_unique = len(best_list_set)
+
+          a_minus_a = set()
+          for i in best_list:
+              for j in best_list:
+                  a_minus_a.add(i - j)
+
+          a_plus_a = set()
+          for i in best_list:
+              for j in best_list:
+                  a_plus_a.add(i + j)
+
+          lhs = len(a_minus_a)
+          rhs = len(a_plus_a)
+
+          denominator = math.log(lhs / rhs)
+
+          # Find the maximum value of best_list_set
+          max_value = max(best_list_set)
+
+          try:
+              return denominator / math.log(2 * max_value + 1) + 1.0
+          except Exception:
+              return 0
+
+  # Name of the component selected for current run
+  planner_name: "evolve_planner"
+  executor_name: "evolve_executor_fuse"
+  summary_name: "evolve_summary"
+
+  # Core parameters for the evolution process
+  max_iterations: 1000
+  target_score: 1.0
+  concurrency: 3
+
+  # Evaluator configuration
+  evaluator:
+    timeout: 3000
+
+  # Database configuration
+  database:
+    storage_type: "in_memory"
+    num_islands: 3
+    population_size: 30
+    checkpoint_interval: 2
+    # If sampling_weight_power < 1, sampling weight has a weak effect
+    sampling_weight_power: 5

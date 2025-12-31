@@ -1,0 +1,120 @@
+import numpy as np
+
+def optimize_lower_bound():
+    # Genetic Algorithm Parameters
+    POPULATION_SIZE = 100
+    GENERATIONS = 50
+    MUTATION_RATE = 0.1
+    TOURNAMENT_SIZE = 5
+    
+    # Initialize population
+    population = [np.random.uniform(0.5, 1.5, 50) for _ in range(POPULATION_SIZE)]
+    
+    # Fitness evaluation function
+    def evaluate(heights):
+        convolution = np.convolve(heights, heights)
+        return cal_lower_bound(convolution)
+    
+    # Tournament selection
+    def tournament_selection(population, scores):
+        selected = []
+        for _ in range(len(population)//2):
+            candidates = np.random.choice(len(population), TOURNAMENT_SIZE, replace=False)
+            winners = sorted(candidates, key=lambda i: scores[i], reverse=True)[:2]
+            selected.extend([population[i] for i in winners])
+        return selected
+    
+    # Uniform crossover
+    def crossover(parent1, parent2):
+        return np.array([parent1[i] if np.random.rand() > 0.5 else parent2[i] for i in range(50)])
+    
+    # Gaussian mutation
+    def mutate(child):
+        mask = np.random.rand(50) < MUTATION_RATE
+        child[mask] += np.random.normal(0, 0.1, sum(mask))
+        return np.clip(child, 0, None)
+    
+    # Main GA loop
+    best_solution = None
+    best_score = 0
+    
+    for generation in range(GENERATIONS):
+        # Evaluate current population
+        scores = [evaluate(ind) for ind in population]
+        
+        # Track best solution
+        current_best_idx = np.argmax(scores)
+        if scores[current_best_idx] > best_score:
+            best_score = scores[current_best_idx]
+            best_solution = population[current_best_idx]
+        
+        # Selection
+        parents = tournament_selection(population, scores)
+        
+        # Crossover and mutation
+        children = []
+        for i in range(0, len(parents), 2):
+            child = crossover(parents[i], parents[i+1])
+            child = mutate(child)
+            children.append(child)
+        
+        # Replace worst half of population
+        combined = list(zip(population, scores))
+        combined.sort(key=lambda x: x[1], reverse=True)
+        population = [x[0] for x in combined[:POPULATION_SIZE//2]] + children
+    
+    # Verify and return best solution
+    heights_sequence_2 = best_solution
+    convolution_2 = np.convolve(heights_sequence_2, heights_sequence_2)
+    c_lower_bound = cal_lower_bound(convolution_2)
+    
+    # Keep verification functions unchanged
+    return heights_sequence_2, c_lower_bound
+
+# The following functions remain unchanged from the parent solution
+def cal_lower_bound(convolution_2: list[float]):
+    # Calculate the 2-norm squared: ||f*f||_2^2
+    num_points = len(convolution_2)
+    x_points = np.linspace(-0.5, 0.5, num_points + 2)
+    x_intervals = np.diff(x_points) # Width of each interval
+    y_points = np.concatenate(([0], convolution_2, [0]))
+    l2_norm_squared = 0.0
+    for i in range(len(convolution_2) + 1):  # Iterate through intervals
+        y1 = y_points[i]
+        y2 = y_points[i+1]
+        h = x_intervals[i]
+        # Integral of (mx + c)^2 = h/3 * (y1^2 + y1*y2 + y2^2) where m = (y2-y1)/h, c = y1 - m*x1, interval is [x1, x2], y1 = mx1+c, y2=mx2+c
+        interval_l2_squared = (h / 3) * (y1**2 + y1 * y2 + y2**2)
+        l2_norm_squared += interval_l2_squared
+
+    # Calculate the 1-norm: ||f*f||_1
+    norm_1 = np.sum(np.abs(convolution_2)) / (len(convolution_2) + 1)
+
+    # Calculate the infinity-norm: ||f*f||_inf
+    norm_inf = np.max(np.abs(convolution_2))
+    c_lower_bound = l2_norm_squared / (norm_1 * norm_inf)
+
+    print(f"This step function shows that C2 >= {c_lower_bound}")
+    return c_lower_bound
+
+def verify_heights_sequence(heights_sequence_2: np.ndarray, c_lower_bound: float):
+    if len(heights_sequence_2) != 50:
+        return False, f"len(heights_sequence_2) not 50"
+
+    for i in range(len(heights_sequence_2)):
+        if heights_sequence_2[i] < 0:
+            return False, f"heights_sequence_2 all elements must be non-negative"
+
+    convolution_2 = np.convolve(heights_sequence_2, heights_sequence_2)
+    c_c_lower_bound = cal_lower_bound(convolution_2)
+    if c_lower_bound != c_c_lower_bound:
+        return False, f"c_lower_bound: {c_lower_bound} miscalculation, the correct value is {c_c_lower_bound}"
+
+    return True, ""
+
+if __name__ == "__main__":
+    heights_sequence_2, c_lower_bound = optimize_lower_bound()
+    print(f"Step function values: {heights_sequence_2}, C2 >= {c_lower_bound}")
+
+    valid, err = verify_heights_sequence(heights_sequence_2, c_lower_bound)
+    print(f"valid = {valid} err = {err}")

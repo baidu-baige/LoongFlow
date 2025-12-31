@@ -1,0 +1,220 @@
+# Global directory configuration
+workspace_path: "./output"
+
+# Global LLM configuration(optional)
+# If evaluator or other components do not have their own llm_config, this configuration will be used.
+llm_config:
+  url: "http://xxx/v1"
+  api_key: "xxx"
+  model: "deepseek-r1-250528"
+  temperature: 0.8
+  context_length: 128000
+  max_tokens: 32768
+  top_p: 1.0
+  timeout: 1200
+
+# ------------------------------------------------------------------------------
+# Define the configuration for all available components
+# ------------------------------------------------------------------------------
+
+# All available Planner configurations
+planners:
+  evolve_planner:
+    # Planner-specific configurations (e.g., prompt templates, LLM used, etc.)
+    react_max_steps: 10
+
+# All available Executor configurations
+executors:
+  evolve_executor:
+    # Executor-specific configurations
+    parallel_candidates: 1
+    max_rounds: 3
+    react_max_steps: 10
+
+  evolve_executor_fuse:
+    # ExecutorChat-specific configurations
+    react_max_steps: 15
+    score_threshold: 0.95
+    max_rounds: 3
+    chat_system_prompt: |
+      We are currently using an Algorithm Evolve Paradigm (Evolux) to solve an evolve task. In Evolux, there are three phases:
+
+      Phase 1: Planner. Planner is responsible for sampling the parent solution based on the task objectives, analyzing the current database status using a global perspective, and designing a generation plan for the next iteration, with the aim of achieving linear optimization based on the parent and solve the task.
+      Phase 2: Executor. Executor is responsible for following the generation plan and the sampled parent solution, based on the task objectives, generate a new child solution that passes evaluation and get a higher evaluation score than the parent.
+      Phase 3: Summary. Summary is responsible for reviewing the lessons learned from the child solution, if the evaluation results are better than the parent solution, successful experiences are summarized; otherwise, failures are summarized. The child generation source tracing path is recorded, and the sampling weight of the parent for next iteration in the database are updated.
+
+      This achieves a self-evolutionary closed loop across Phases 1, 2 and 3.
+
+      Now You are **Phase 2: Executor** in the Evolux Evolution Paradigm. Your responsibility is to remember the task information and, based on the sampled parent solution and generation plan, generate a child solution which can pass the evaluation.
+
+      VERY IMPORTANT: You MUST remember the task information and ensure that the code is generated strictly followed by the plan.
+      VERY IMPORTANT: You are the SECOND Phase of Evolux, your generated solution is the most important part. If you come up with a bad child solution, which does not pass the evaluation, it will slow down the entire evolutionary process, cause significant losses in time and money, this is UNACCEPTABLE. If this happens, you will be PUNISHED and DISMISSED.
+
+      Code Generation Requirements[VERY IMPORTANT AND MUST]:
+        * You must fully implement the generate_erdos_data method, and return value must be: def generate_erdos_data() -> np.ndarray. Remember import numpy as np and other necessary imports.
+        * generate_erdos_data function result will be evaluated by the provided evaluation code, you must ensure the correctness of the generated code:
+        ```
+          import numpy as np
+          def generate_erdos_data() -> np.ndarray:
+            """Generates a sequence of coefficients for Erdős' minimum overlap problem."""
+            # Your implementation goes here.
+            pass
+
+          def verify_sequence(sequence: list[float]):
+            """Raises an error if the sequence does not satisfy the constraints."""
+            # Check that all values are between 0 and 1.
+            if not all(0 <= val <= 1 for val in sequence):
+              raise AssertionError("All values in the sequence must be between 0 and 1.")
+            # Check that the sum of values in the sequence is exactly n / 2.0.
+            # Note: Due to floating point errors in adaptive scaling, we use np.isclose
+            target_val = len(sequence) / 2.0
+            current_sum = np.sum(sequence)
+            if not np.isclose(current_sum, target_val, rtol=1e-5):
+              raise AssertionError(
+                  "The sum of values in the sequence must be exactly n / 2.0. The sum is "
+                  f"{current_sum} but it should be {target_val}.")
+            print(
+                "The sequence generates a valid step function for Erdős' minimum "
+                "overlap problem."
+            )
+
+          def compute_upper_bound(sequence: list[float]) -> float:
+            """Returns the upper bound for a sequence of coefficients."""
+            convolution_values = np.correlate(
+                np.array(sequence), 1 - np.array(sequence), mode='full'
+            )
+            return np.max(convolution_values) / len(sequence) * 2
+
+          # --- Usage Example ---
+          if __name__ == "__main__":
+              # 1. Get data (Arguments are removed) You generated code
+              best_sequence = generate_erdos_data()
+
+              # 2. Execute your required external operations
+              reversed_sequence = best_sequence[::-1]
+              final_sequence = np.concatenate((best_sequence[:-1], reversed_sequence))
+
+              # 3. Verify and Print
+              verify_sequence(final_sequence)
+              print("Upper Bound:", compute_upper_bound(final_sequence))
+        ```
+
+        * For this code snippet:
+         ```
+          best_sequence = generate_erdos_data()
+          reversed_sequence = best_sequence[::-1]
+          final_sequence = np.concatenate((best_sequence[:-1], reversed_sequence))
+          verify_sequence(final_sequence)
+        ```
+        Your generate_erdos_data does not need to return the final_sequence, just return best_sequence.
+
+# All available Summarizer configurations
+summarizers:
+  evolve_summary:
+    # Summarizer-specific configurations
+    react_max_steps: 10
+# ------------------------------------------------------------------------------
+# Define configurations for the main evolution process
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description, is the core objective of the entire evolution process
+  task: |
+    Act as an expert in optimization and algorithm design. Your task is to solve the following problem:
+
+    Erdős' minimum overlap problem
+
+    Let $C_5$ be the largest constant satisfying
+    $$ \sup_{x \in [-2,2]} \int_{-1}^1 f(t) g(x+t)\ dt\geq C_5$$
+    for all non-negative $f,g: [-1,1] \to [0,1]$ with $f+g=1$ on $[-1,1]$ and
+    $\int f(x)\ dx = 1$, where we extend $f,g$ by zero outside of $[-1,1]$. This
+    constant controls the asymptotics of the Minimum Overlap Problem described by
+    [Erdős (1955)]. The bounds
+    $$0.379005 \leq C_5 \leq 0.380927$$
+    are known; the lower bound was obtained by
+    [White (2023)]
+    via convex programming methods.
+
+    It is known that
+    this constant is equal to the infimum, over all step
+    functions $h$ on $[0, 2]$ with values in $[0, 1]$ and satisfying
+    $
+    \int_0^2 h(x)dx = 1
+    $
+    of
+    $$
+    \max_k \int h(x)(1 - h(x+k))dx
+    .$$ The upper bound to the Erdős minimum overlap problem was then obtained by using this result, in
+    [Haugland (2016)] by a step function
+    construction.
+
+    Your goal is to lower the upper bound as much as possible; it needs to be less than 0.380927. You can refer to the way the compute_upper_bound function calculates the upper bound.
+
+    You need to fully implement the `generate_erdos_data` function and return an `np.ndarray`. The upper limit calculated based on the returned result should be as small as possible, preferably smaller than 0.380927. The data returned by the `generate_erdos_data` function needs to be tested and the upper limit calculated using the following code:
+
+    import numpy as np
+    def generate_erdos_data() -> np.ndarray:
+      """Generates a sequence of coefficients for Erdős' minimum overlap problem."""
+      # Your implementation goes here.
+      pass
+
+    def verify_sequence(sequence: list[float]):
+      """Raises an error if the sequence does not satisfy the constraints."""
+      # Check that all values are between 0 and 1.
+      if not all(0 <= val <= 1 for val in sequence):
+        raise AssertionError("All values in the sequence must be between 0 and 1.")
+      # Check that the sum of values in the sequence is exactly n / 2.0.
+      # Note: Due to floating point errors in adaptive scaling, we use np.isclose
+      target_val = len(sequence) / 2.0
+      current_sum = np.sum(sequence)
+      if not np.isclose(current_sum, target_val, rtol=1e-5):
+        raise AssertionError(
+            "The sum of values in the sequence must be exactly n / 2.0. The sum is "
+            f"{current_sum} but it should be {target_val}.")
+      print(
+          "The sequence generates a valid step function for Erdős' minimum "
+          "overlap problem."
+      )
+
+
+    def compute_upper_bound(sequence: list[float]) -> float:
+      """Returns the upper bound for a sequence of coefficients."""
+      convolution_values = np.correlate(
+          np.array(sequence), 1 - np.array(sequence), mode='full'
+      )
+      return np.max(convolution_values) / len(sequence) * 2
+
+    # --- Usage Example ---
+    if __name__ == "__main__":
+        # 1. Get data (Arguments are removed) You generated code
+        best_sequence = generate_erdos_data()
+
+        # 2. Execute your required external operations
+        reversed_sequence = best_sequence[::-1]
+        final_sequence = np.concatenate((best_sequence[:-1], reversed_sequence))
+
+        # 3. Verify and Print
+        verify_sequence(final_sequence)
+        print("Upper Bound:", compute_upper_bound(final_sequence))
+
+  # Name of the component selected for current run
+  planner_name: "evolve_planner"
+  executor_name: "evolve_executor_fuse"
+  summary_name: "evolve_summary"
+
+  # Core parameters for the evolution process
+  max_iterations: 1000
+  target_score: 1.0
+  concurrency: 3
+
+  # Evaluator configuration
+  evaluator:
+    timeout: 1800
+
+  # Database configurations
+  database:
+    storage_type: "in_memory"
+    num_islands: 3
+    population_size: 30
+    checkpoint_interval: 2
+    # If sampling_weight_power < 1, sampling weight has a weak effect
+    sampling_weight_power: 5

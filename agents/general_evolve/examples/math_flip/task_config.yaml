@@ -1,0 +1,90 @@
+# Global directory configuration
+workspace_path: "./output"
+
+# Global LLM configuration (optional)
+# If evaluator or other components don't have their own llm_config, this will be used
+llm_config:
+  url: "http://xxx/v1"
+  api_key: "******"
+  model: "deepseek-r1-250528"
+  temperature: 0.8
+  context_length: 128000
+  max_tokens: 32768
+  top_p: 1.0
+  timeout: 1200
+
+# ------------------------------------------------------------------------------
+# Define all available components
+# ------------------------------------------------------------------------------
+
+# All available Planner configurations
+planners:
+  evolve_planner:
+    # Planner-specific configurations (e.g., prompt templates, LLM used, etc.)
+    react_max_steps: 10
+
+# All available Executor configurations
+executors:
+  evolve_executor_react:
+    # ExecutorReact's specific configurations
+    parallel_candidates: 1
+    max_rounds: 3
+    react_max_steps: 10
+
+  evolve_executor_chat:
+    # ExecutorChat-specific configuration
+    max_rounds: 3
+
+  evolve_executor_fuse:
+    # ExecutorFuse-specific configurations
+    max_rounds: 3
+    react_max_steps: 15
+    score_threshold: 0.99
+
+# All available Summarizer configurations
+summarizers:
+  evolve_summary:
+    # Summarizer-specific configurations
+    react_max_steps: 10
+# ------------------------------------------------------------------------------
+# Define main evolution process configuration
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description, which is the core goal of the entire evolution process
+  task: |
+    Fill in the blank spaces in each puzzle with the digits shown below so that the equation is true, and remains true even when viewed upside down. (Note that the 2 and 3 look like one another upside down, as do the 4 and 7, and 6 and 9.) No puzzle contains any digit more than once. Standard order of operations are used: multiplication and division before addition and subtraction, and otherwise left to right.
+    digits:0,1,2,3,4,5,6,7,8,9
+
+    puzzle1: xx + x = x * 9
+
+    puzzle2: xx = xx - x * 4
+
+    In both formulas, each x represents a single digit, and xx represents a two-digit number.
+
+    [IMPORTANT]
+    - You can try different algorithms and combinations of algorithms, including various deterministic and dynamic algorithms.
+    - A score of 1.0 signifies success, while 0.0 indicates failure
+  # Name of the component selected for current run
+  planner_name: "evolve_planner"
+  executor_name: "evolve_executor_fuse"
+  summary_name: "evolve_summary"
+
+  # Core parameters of the evolution process
+  max_iterations: 1000
+  target_score: 1.0
+  concurrency: 2
+
+  # Evaluator configuration
+  evaluator:
+    timeout: 1200
+
+
+  # Database configurations
+  database:
+    storage_type: "in_memory"
+    num_islands: 3
+    population_size: 100
+    checkpoint_interval: 2
+    # If sampling_weight_power < 1, sampling weight has a weak effect
+    sampling_weight_power: 2
+

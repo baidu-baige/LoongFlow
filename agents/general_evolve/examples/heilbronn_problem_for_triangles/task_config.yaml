@@ -1,0 +1,99 @@
+# Global directory configuration
+workspace_path: "./output"
+
+# Global LLM configuration (optional)
+# If evaluator or other components don't have their own llm_config, this will be used
+llm_config:
+  url: "xxxxxx"
+  api_key: "******"
+  model: "openai/gemini-3-flash-preview"
+  temperature: 0.8
+  context_length: 128000
+  max_tokens: 32768
+  top_p: 1.0
+  timeout: 1200
+
+# ------------------------------------------------------------------------------
+# Define the configuration for all available components
+# ------------------------------------------------------------------------------
+
+# All available Planner configurations
+planners:
+  evolve_planner:
+    # Planner-specific configurations (e.g., prompt templates, LLM used, etc.)
+    react_max_steps: 10
+
+# All available Executor configurations
+executors:
+  evolve_executor_fuse:
+    # ExecutorFuse-specific configurations
+    max_rounds: 3
+    react_max_steps: 15
+    score_threshold: 0.95
+
+# All available Summarizer configurations
+summarizers:
+  evolve_summary:
+    # Summarizer-specific configurations
+    react_max_steps: 10
+
+# ------------------------------------------------------------------------------
+# Define the configuration for the main evolution process
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description, is the core objective of the entire evolution process
+  task: |
+    Your task is to solve the Heilbronn problem for triangles.
+
+    The problem is to place n points in an equilateral triangle with vertices (0,0), (1,0), and (0.5, sqrt(3)/2) to maximize the minimum area of a triangle formed by any three of those points. The benchmark for n=11 is a min_area of 0.0365. Your algorithm should aim to surpass this.
+
+    Your solution will be evaluated via a function with the signature: points, min_area = run_search_point(n)
+    
+    In the function run_search_point(n), you must define a function find_best_placement(n) that performs the search. This function should return two things:
+    * points: A 2D NumPy array of shape (n, 2), where each row contains the (x, y) coordinates for a point.
+    * min_area: A single floating-point number representing the smallest area of any triangle formed by any three of the points, normalized by the area of the large equilateral triangle.
+
+    You have to evolve the function find_best_placement(n) to solve this problem.
+
+    Since the evaluation entry function is run_search_point(n), so you must write a run_search_point(n) function which calls find_best_placement(n).
+
+    Key insights and suggestions:
+    - Consider using optimization techniques such as simulated annealing, genetic algorithms, or other heuristic methods.
+    - Analyze geometric properties and symmetries that might simplify the problem.
+    - Incorporate existing mathematical insights or bounds related to the Heilbronn Triangle Problem.
+    - Focus on breaking through plateaus by trying fundamentally different approaches, not just tweaking parameters.
+
+    The following will be checked automatically:
+    - Containment: All points must lie strictly inside the equilateral triangle.
+    - Non-collinearity: Any three points must form a non-degenerate triangle.
+    - Uniqueness: All points must be distinct.
+
+    You must keep the run_search_point function unchanged, as it is the fixed entry point for the evaluator.
+    Your solution should be written in Python.
+    
+    You got this! I believe in you!!!
+
+  # Name of the component selected for current run
+  planner_name: "evolve_planner"
+  executor_name: "evolve_executor_fuse"
+  summary_name: "evolve_summary"
+
+  # Core parameters of the evolution process
+  max_iterations: 60
+  target_score: 1.0
+  concurrency: 3
+
+  # Evaluator configuration
+  evaluator:
+    timeout: 1800
+
+
+  # Database configuration
+  database:
+    storage_type: "in_memory"
+    num_islands: 3
+    population_size: 60
+    checkpoint_interval: 1
+    # If sampling_weight_power < 1, sampling weight has a weak effect
+    sampling_weight_power: 2
+

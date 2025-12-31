@@ -1,0 +1,14 @@
+{
+  "score": 0.8835473189095864,
+  "metrics": {
+    "C_lower_bound": 0.7918351072067713,
+    "target_ratio": 0.8835473189095864,
+    "validity": 1.0,
+    "eval_time": 0.6239020824432373
+  },
+  "artifacts": {
+    "execution_time": "0.62s",
+    "packing_summary": "C_lower_bound: 0.791835/0.8962 = 0.8835",
+    "validation_report": "Valid: True, Violations: 0"
+  }
+}

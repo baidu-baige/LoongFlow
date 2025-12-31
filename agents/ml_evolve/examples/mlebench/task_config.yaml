@@ -1,0 +1,69 @@
+# config.template.yaml
+# This is a template configuration for running the LoongFlow-ML framework.
+
+workspace_path: "./output"
+
+# Global LLM configuration. This will be used by any component that
+# does not have its own specific llm_config defined.
+llm_config:
+  url: "https://xx"
+  api_key: "******"
+  model: "openai/gemini-3-flash-preview"
+  temperature: 0.8
+  context_length: 128000
+  max_tokens: 32768
+  top_p: 1.0
+
+# ------------------------------------------------------------------------------
+# Define all available components and their configurations.
+# The 'evolve' section below will select which of these to use for a run.
+# ------------------------------------------------------------------------------
+
+planners:
+  # The default planner provided by the LoongFlow framework.
+  ml_planner:
+    react_max_steps: 10
+    evo_coder_timeout: 3600
+
+executors:
+  # The default executors provided by the LoongFlow framework.
+  ml_executor:
+    react_max_steps: 10
+    evo_coder_timeout: 86300 # 24h
+
+summarizers:
+  # The default summarizer provided by the LoongFlow framework.
+  ml_summary:
+    react_max_steps: 10
+
+# ------------------------------------------------------------------------------
+# Define the main evolution process configuration.
+# ------------------------------------------------------------------------------
+evolve:
+  # The task description will be automatically populated by ml_evolve.py
+  # from the --task-file argument (e.g., description.md).
+
+  # --- Component Selection ---
+  # Select the components to be used for this evolution run.
+  # These names must match a key in the sections above.
+  planner_name: "ml_planner"
+  executor_name: "ml_executor"
+  summary_name: "ml_summary"
+
+  # --- Core Evolution Parameters ---
+  max_iterations: 100
+  target_score: 1.0
+  concurrency: 1 # Number of evolution cycles to run in parallel.
+
+  # --- Evaluator Configuration ---
+  # This is the most critical part for ML tasks.
+  evaluator:
+    timeout: 1800 # 30 minutes timeout for the entire evaluation process.
+
+  # --- Database Configuration ---
+  database:
+    storage_type: "in_memory"
+    num_islands: 3
+    population_size: 30
+    checkpoint_interval: 5
+    sampling_weight_power: 1.0

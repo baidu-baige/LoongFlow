@@ -1,0 +1,144 @@
+# Global directory configurations
+workspace_path: "./output"
+
+# Global LLM configuration (optional)
+# If evaluator or other components do not have their own llm_config, this configuration will be used
+llm_config:
+  url: "https://xxxxxx/v1"
+  api_key: "******"
+  model: "openai/gemini-3-pro-preview"
+  temperature: 0.8
+  context_length: 128000
+  max_tokens: 32768
+  top_p: 1.0
+  timeout: 1200
+  # Price per 1k tokens
+  prompt_token_price: 0.008
+  # Price per 1k tokens
+  completion_token_price: 0.048
+
+# ------------------------------------------------------------------------------
+# Define the configuration for all available components
+# ------------------------------------------------------------------------------
+
+# All available Configuration for Planner
+planners:
+  evolve_planner:
+    # Planner's specific configuration, such as prompt templates, used LLM, etc.
+    react_max_steps: 10
+
+# All available Configuration for Executor
+executors:
+  evolve_executor_react:
+    # ExecutorReact's specific configuration
+    parallel_candidates: 3
+    max_rounds: 3
+    react_max_steps: 15
+
+  evolve_executor_chat:
+    # ExecutorChat's specific configuration
+    max_rounds: 3
+
+  evolve_executor_fuse:
+    # ExecutorFuse's specific configuration
+    max_rounds: 3
+    react_max_steps: 15
+    score_threshold: 0.7
+
+# All available Summarizer configuration
+summarizers:
+  evolve_summary:
+    # Summarizer's specific configuration
+    react_max_steps: 10
+# ------------------------------------------------------------------------------
+# Define the main evolution process configuration
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description, is the core objective of the entire evolution process
+  task: |
+    # An uncertainty inequality Problem
+    Given a function  𝑓:ℝ→ℝ , define the Fourier transform  𝑓ˆ(𝜉):=∫ℝ𝑓(𝑥)𝑒−2𝜋𝑖𝑥𝜉 𝑑𝑥  and
+      𝐴(𝑓):=inf{𝑟>0:𝑓(𝑥)≥0 for all |𝑥|≥𝑟}. 
+    Let  𝐶4  be the largest constant satisfying
+      𝐴(𝑓)𝐴(𝑓ˆ)≥𝐶4 
+    for all even  𝑓  with  max(𝑓(0),𝑓ˆ(0))<0 . It is known that
+      0.2025 ≤ 𝐶4 ≤ 0.3523; 
+    
+    AlphaEvolve improved the upper bound to  𝐶4 ≤ 0.3521  with a similar linear combination as in Gonçalves et al. (2017) but with refined constants.
+    
+    First, following the method in Gonçalves et al. (2017), we consider test functions of the form  𝑓(𝑥)=𝑃(𝑥)𝑒−𝜋𝑥2 , where  𝑃(𝑥)  is an even polynomial. For this form, the Fourier transform  𝑓̂ (𝜉)  has the structure  𝑃(𝜉)𝑒−𝜋𝜉2 , which implies  𝐴(𝑓)=𝐴(𝑓̂ )  is the largest positive root of  𝑃(𝑥)  (for functions that are positive for large  |𝑥| ). The inequality then becomes  𝐶4≤(𝐴(𝑓))2 .
+    
+    The polynomial  𝑃(𝑥)  is chosen as a linear combination of Hermite polynomials of even order  𝐻4𝑘(𝑥) , specifically  𝑃(𝑥)=∑𝑚𝑘=0𝑐𝑘𝐻4𝑘(𝑥) . The goal is to find coefficients  𝑐𝑘  that minimize the largest positive root of  𝑃(𝑥)  while satisfying certain conditions on  𝑃(𝑥)  (related to the  𝑓(0)<0  condition and  𝑃(𝑥)>0  for large  |𝑥| ). In the implementation below, the polynomial  𝑃(𝑥)  is constructed with the technical constraint  𝑃(0)=0 , meaning  𝑃(𝑥)  has a factor of  𝑥2 . The largest positive root of  𝑃(𝑥)  is then the largest positive root of  𝑃(𝑥)/𝑥2 . The upper bound on  𝐶4  is given by this largest root squared, divided by  2𝜋 .
+    
+    AlphaEvolve found the coefficients ( 𝑐0 ,  𝑐1 ,  𝑐2 ) defining a polynomial  𝑃(𝑥)=𝑐0𝐻0(𝑥)+𝑐1𝐻4(𝑥)+𝑐2𝐻8(𝑥)  that provides an improved upper bound for  𝐶4 .
+
+    Your task is to find the coefficients ( 𝑐0 ,  𝑐1 ,  𝑐2 ), and I'll use the verify_hermite_combination function to verify its validity, and then use the valid coefficients to calculate the upper_bound. The goal is to find a better upper_bound <= 0.3521.
+
+    <verify_hermite_combination>
+    def verify_hermite_combination(coeffs: np.ndarray) -> sympy.Expr:
+      """Computes the Hermite combination for given coefficients."""
+      m = len(coeffs)
+      rational_coeffs = [sympy.Rational(c) for c in coeffs]
+      degrees = np.arange(0, 4 * m + 4, 4)
+      x = sympy.symbols('x')
+      hps = [
+          sympy.polys.orthopolys.hermite_poly(n=i, x=x, polys=False)
+          for i in degrees
+      ]
+    
+      # All but the last coefficient.
+      partial_fn: sympy.Expr = sum(
+          rational_coeffs[i] * hps[i] for i in range(len(rational_coeffs))
+      )
+    
+      # Impose the condition that the root at 0 should be 0.
+      a = hps[-1].subs(x, 0)
+      b = -partial_fn.subs(x, 0)
+      last_coeff = b / a
+      rational_coeffs.append(sympy.Rational(last_coeff))
+    
+      res_fn = sum(rational_coeffs[i] * hps[i] for i in range(len(rational_coeffs)))
+    
+      if sympy.limit(res_fn, x, sympy.oo) < 0:
+        res_fn = -res_fn
+    
+      x = sympy.symbols('x')
+      # Check the value at 0 is 0.
+      value_at_0 = res_fn.subs(x, 0)
+      assert value_at_0 == 0, f'The value at 0 is {value_at_0} != 0.'
+      assert sympy.limit(res_fn, x, sympy.oo) > 0, 'Limit at infty is not positive.'
+    </verify_hermite_combination>
+
+    Requirement:
+    1. Fully implement the find_coefficients function. The return result of coefficients needs to be able to pass the verification of the verify_hermite_combination function.
+    2. Do not rewrite the verify_hermite_combination functions. Keep it unchanged.
+    3. Optimize the algorithm to the extreme, striving to raise upper_bound <= 0.3521.
+
+    Your solution should be written in Python.
+    
+    You got this! I believe in you!!!
+
+  # Name of the component selected for current run
+  planner_name: "evolve_planner"
+  executor_name: "evolve_executor_fuse"
+  summary_name: "evolve_summary"
+
+  # Core parameters for the evolution process
+  max_iterations: 1000
+  target_score: 1.0
+  concurrency: 3
+
+  # Evaluator parameters
+  evaluator:
+    timeout: 1800
+
+
+  # Database parameters
+  database:
+    storage_type: "in_memory"
+    num_islands: 3
+    population_size: 100
+    checkpoint_interval: 5
+    # If sampling_weight_power < 1, sampling weight has a weak effect
+    sampling_weight_power: 1
+

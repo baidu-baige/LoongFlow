@@ -1,0 +1,8 @@
+numpy
+scipy
+numba
+matplotlib
+scikit-learn
+shapely
+cvxpy
+sobol-seq

@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agents*", "src*"]
+namespaces = true
+
+[project]
+name = "loongflow"
+version = "0.1.0"
+description = "agent"
+authors = [{ name = "loongflow", email = "loongflow@baidu.com" }]
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache License 2.0" }
+dependencies = [
+    "numpy>=2.2.6",
+    "openai>=1.102.0",
+    "pyyaml>=6.0.2",
+    "aiohttp>=3.12.15",
+    "redis>=6.4.0",
+    "uvicorn>=0.35.0",
+    "httpx[socks]>=0.28.1",
+    "matplotlib>=3.10.6",
+    "scipy>=1.16.1",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+    "pyfakefs>=5.10.0",
+    "litellm>=1.80.10",
+    "flask>=3.1.2",
+    "sympy>=1.14.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+    "pyfakefs>=5.10.0"
+]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+asyncio_mode = "auto"
+addopts = "-s"
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)s] %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"

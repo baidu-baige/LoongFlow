@@ -1,0 +1,96 @@
+# Global directory configuration 
+workspace_path: "./output"
+
+# Global LLM configuration (optional)
+# If evaluator or other components do not have their own llm_config, this configuration will be used.
+llm_config:
+  url: "http://xxx/v1"
+  api_key: "xxx"
+  model: "deepseek-r1-250528"
+  temperature: 0.8
+  context_length: 128000
+  max_tokens: 32768
+  top_p: 1.0
+  timeout: 1200
+
+# ------------------------------------------------------------------------------
+# Define the configuration for all available components
+# ------------------------------------------------------------------------------
+
+# All available Configuration for Planner
+planners:
+  evolve_planner:
+    # Planner's specific configuration, such as prompt templates, used LLM, etc.
+    react_max_steps: 10
+
+# All available Executor configurations
+executors:
+  evolve_executor_react:
+    # ExecutorReact's specific configuration
+    parallel_candidates: 3
+    max_rounds: 3
+    react_max_steps: 15
+
+  evolve_executor_chat:
+    # ExecutorChat's specific configuration
+    max_rounds: 3
+
+  evolve_executor_fuse:
+    # ExecutorFuse's specific configuration
+    max_rounds: 3
+    react_max_steps: 15
+    score_threshold: 0.9
+
+# All available Summarizer configuration
+summarizers:
+  evolve_summary:
+    # Summarizer's specific configuration
+    react_max_steps: 10
+# ------------------------------------------------------------------------------
+# Define the main evolution process configuration
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description, is the core objective of the entire evolution process
+  task: |
+    # Second autocorrelation inequality Problem
+    You are a professional mathematics researcher specializing in the study of second-order autocorrelation inequalities. 
+
+    Let  𝐶2  be the smallest constant for which one has
+        ‖𝑓∗𝑓‖22≤𝐶2‖𝑓∗𝑓‖1‖𝑓∗𝑓‖∞
+    for all non-negative  𝑓:ℝ→ℝ . It is known that
+        0.88922≤𝐶2≤1,
+    with the lower bound coming from a step function construction by Matolcsi and Vinuesa (2010).
+    
+    Your task is to find a step function with 50 equally-spaced intervals on  [−1/4,1/4]  that gives a slightly better lower bound 0.8962≤𝐶2 .
+
+    Requirement:
+    1. Fully implement the optimize_lower_bound function. The return result of optimize_lower_bound needs to be able to pass the verification of the verify_heights_sequence function. Ensure that the input and output parameters of optimize_lower_bound remain unchanged.
+    2. Do not rewrite the cal_lower_bound and verify_heights_sequence functions. Keep them unchanged.
+    3. Optimize the algorithm to the extreme, striving to raise c_lower_bound to beyond 0.8962.
+
+    We need to achieve breakthroughs in this problem through algorithmic innovation, focusing more on fundamental algorithmic innovations rather than merely attempting to find the optimal value through existing optimization algorithms such as SQP/BFGS.
+
+  # Name of the component selected for current run
+  planner_name: "evolve_planner"
+  executor_name: "evolve_executor_fuse"
+  summary_name: "evolve_summary"
+
+  # Core parameters for the evolution process
+  max_iterations: 1000
+  target_score: 1.0
+  concurrency: 3
+
+  # Ealuator configuration
+  evaluator:
+    timeout: 1200
+
+
+  # Database configuration
+  database:
+    storage_type: "in_memory"
+    num_islands: 3
+    population_size: 100
+    checkpoint_interval: 5
+    # If sampling_weight_power < 1, sampling weight has a weak effect
+    sampling_weight_power: 1
+

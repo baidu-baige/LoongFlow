@@ -1,0 +1,103 @@
+# Global directory configuration
+workspace_path: "./output"
+
+# Global LLM configuration(optional)
+# If evaluator or other components do not have their own llm_config, this configuration will be used
+llm_config:
+  url: "http://xxx/v1"
+  api_key: "******"
+  model: "deepseek-r1-250528"
+  temperature: 0.8
+  context_length: 128000
+  max_tokens: 32768
+  top_p: 1.0
+  timeout: 1200
+
+# ------------------------------------------------------------------------------
+# Define the configuration for all available components
+# ------------------------------------------------------------------------------
+
+# All available Planner configurations
+planners:
+  evolve_planner:
+    # Planner's specific configuration, such as prompt templates, used LLM, etc.
+    react_max_steps: 10
+
+# All available Executor configurations
+executors:
+  evolve_executor_react:
+    # ExecutorReact's specific configuration
+    parallel_candidates: 3
+    max_rounds: 3
+    react_max_steps: 20
+
+  evolve_executor_chat:
+    # ExecutorChat's specific configuration
+    max_rounds: 3
+    system_prompt: |
+      You are an expert mathematician specializing in circle packing problems and computational geometry. We're trying to reach the AlphaEvolve target of 2.365 for the sum of radii when packing 21 circles in a rectangle of perimeter 4. The current implementation has plateaued at 2.364, so we need significant improvements.
+
+      Key insights to explore:
+      1. The optimal arrangement likely involves variable-sized circles
+      2. The optimal arrangement may involve adjusting the side length of the rectangle, but it is necessary to ensure that the perimeter of the rectangle is 4
+      3. A pure hexagonal arrangement may not be optimal due to edge effects
+      4. The densest known circle packings often use a hybrid approach
+      5. The optimization routine is critically important - simple physics-based models with carefully tuned parameters
+      6. Consider strategic placement of circles at rectangle corners and edges
+      7. Adjusting the pattern to place larger circles at the center and smaller at the edges
+      8. The math literature suggests special arrangements for specific values of n
+
+      Focus on breaking through the plateau by trying fundamentally different approaches - don't just tweak parameters.
+      You must try different algorithms and combinations of algorithms, including various deterministic and dynamic algorithms. This includes, but is not limited to, COBYLA, SLSQP, trust-constr, differential_evolution, basinhopping, and various combinations thereof.
+
+# All available Summarizer configurations
+summarizers:
+  evolve_summary:
+    # Summarizer's specific configuration
+    react_max_steps: 10
+# ------------------------------------------------------------------------------
+# Define the main evolution process configuration
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description, is the core objective of the entire evolution process
+  task: |
+    Act as an expert software developer. Your task is to iteratively improve the provided codebase. Your primary goal is to write a search function that has 1000 seconds to solve a packing problem.
+
+    The problem is to place num_circles disjoint disks into a rectangle of perimeter 4. Crucially, your function must also find the optimal width and height of this rectangle to maximize the sum of the disks' radii.
+
+    Your generated search function must looks like this: centers, radii, width, height = run_packing(num_circles)
+
+    So you MUST write a run_packing(num_circles) function that returns four things:
+    * centers: A 2D NumPy array of shape (num_circles, 2), where each row contains the (x, y) coordinates for the center of a circle.
+    * radii: A 1D NumPy array of num_circles non-negative, finite numbers.
+    * width, height: Two positive, finite floating-point numbers that define the dimensions of the rectangle. They must satisfy the constraint 2 * (width + height) == 4.0.
+
+    The following geometric constraints will be checked automatically:
+    * Containment: All circles must be fully contained within the rectangle defined by the corners (0, 0) and (width, height).
+    * Disjointness: The circles must be disjoint. This will be checked with a snippet as follows:
+
+    You got this! I believe in you!!!
+    For this run, num_circles is fixed to 21. Please design your search algorithm specifically for num_circles = 21
+
+  # Name of the component selected for current run
+  planner_name: "evolve_planner"
+  executor_name: "evolve_executor_chat"
+  summary_name: "evolve_summary"
+
+  # Core parameters of the evolution process
+  max_iterations: 1000
+  target_score: 1.0
+  concurrency: 3
+
+  # Evaluator configuration
+  evaluator:
+    timeout: 1200
+
+
+  # Database configuration
+  database:
+    storage_type: "in_memory"
+    num_islands: 3
+    population_size: 60
+    checkpoint_interval: 1
+    sampling_weight_power: 1

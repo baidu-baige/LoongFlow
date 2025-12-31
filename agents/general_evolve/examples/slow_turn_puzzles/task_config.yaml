@@ -1,0 +1,171 @@
+# Global directory configuration
+workspace_path: "./output"
+
+# Global LLM configuration (optional)
+# If evaluator or other components do not have their own llm_config, this configuration will be used.
+llm_config:
+  url: "http://xxx/v1"
+  api_key: "******"
+  model: "deepseek-r1-250528"
+  temperature: 0.8
+  context_length: 128000
+  max_tokens: 32768
+  top_p: 1.0
+  timeout: 1200
+
+# ------------------------------------------------------------------------------
+# Define the configuration for all available components
+# ------------------------------------------------------------------------------
+
+# All available Configuration for Planner
+planners:
+  evolve_planner:
+    # Planner's specific configuration, such as prompt templates, used LLM, etc.
+    react_max_steps: 10
+
+# All available Executor configurations
+executors:
+  evolve_executor_react:
+    # ExecutorReact's specific configuration
+    parallel_candidates: 3
+    max_rounds: 3
+    react_max_steps: 15
+
+  evolve_executor_chat:
+    # ExecutorChat's specific configuration
+    max_rounds: 3
+
+  evolve_executor_fuse:
+    # ExecutorFuse's specific configuration
+    max_rounds: 3
+    react_max_steps: 15
+    score_threshold: 0.5
+
+# All available Summarizer configuration
+summarizers:
+  evolve_summary:
+    # Summarizer's specific configuration
+    react_max_steps: 10
+# ------------------------------------------------------------------------------
+# Define the main evolution process configuration
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description, is the core objective of the entire evolution process
+  task: |
+    Slow Turn Puzzles.
+    
+    # Target
+    - Find a looping path that moves through the grid (horizontally, vertically, or diagonally) and satisfies the following conditions:
+    - Must pass through all green squares ('G')
+    - Cannot pass through any red squares ('R')
+    - Can pass through some white squares (the empty string)
+    - Only shallow 135-degree turns (i.e., turns with an angle of 135 degrees) are allowed
+    - No square can be visited twice (the starting and ending points must be the same, forming a loop)
+    - The path can cross itself
+
+    # Validate Function
+    def validate_solution(grid, path)-> (float, str):
+    """
+    Verify if the path meets the conditions
+    
+    parameters:
+    path: list，contains path point tuples (x, y)
+    green_squares: list，contains green grid cell tuples (x, y)
+    red_squares: list，contains red grid cell tuples (x, y)
+    
+    return:
+    bool: If all conditions are satisfied, return True; otherwise, return False
+    """
+    if path is None:
+        return False, "Path is empty"
+
+    # Check if the path is a cycle: the start point and end point are the same
+    if path[0] != path[-1]:
+        return False, "Path is not a cycle: start and end points are different"
+
+    # Check that no grid cells (except the starting point) are visited more than once
+    visited = set()
+    for point in path[:-1]:  # Excludes the last point (which is the same as the starting point)
+        if point in visited:
+            return False, f"Point {point} Repeated visits"
+        visited.add(point)
+    
+    # Check that all moves are adjacent (horizontal, vertical, or diagonal)
+    for i in range(len(path)-1):
+        x1, y1 = path[i]
+        x2, y2 = path[i+1]
+        dx = x2 - x1
+        dy = y2 - y1
+        if abs(dx) > 1 or abs(dy) > 1 or (dx == 0 and dy == 0):
+            return False, f"Move from {path[i]} to {path[i+1]} which is not adjacent"
+
+
+    # Check that the turning angle does not exceed 45 degrees (i.e., the angle change is 0 or 45 degrees)
+    n = len(path)
+    for i in range(n):
+        # Calculate the entering and exiting vectors for the turn
+        # Incoming vector: from the previous point to the current point
+        prev_point = path[i-1] if i > 0 else path[-2]  # For i=0, use the second-to-last point as the previous point
+        current_point = path[i]
+        next_point = path[i+1] if i < n-1 else path[1]  # For i=n-1, use the second point as the next point (since the last point is the start point)
+    
+        dx_in = current_point[0] - prev_point[0]
+        dy_in = current_point[1] - prev_point[1]
+        dx_out = next_point[0] - current_point[0]
+        dy_out = next_point[1] - current_point[1]
+    
+        # Calculate the dot product and norm
+        dot = dx_in * dx_out + dy_in * dy_out
+        norm_in_sq = dx_in**2 + dy_in**2
+        norm_out_sq = dx_out**2 + dy_out**2
+    
+        # If the dot product is negative, the angle is greater than 90 degrees, and the path/vector is invalid
+        if dot < 0:
+            return False, f"The turning angle from {prev_point} -> {current_point}  to {current_point} -> {next_point} is greater than 90 degrees"
+    
+        # Check dot^2 * 2 >= norm_in_sq * norm_out_sq
+        if dot**2 * 2 < norm_in_sq * norm_out_sq:
+            return False, f"The turning angle from {prev_point} -> {current_point}  to {current_point} -> {next_point} exceeds 45 degrees"
+
+    # Check that the path contains all green squares
+    green_squares = [(i, j) for i in range(len(grid)) for j in range(len(grid[0])) if grid[i][j] == 'G']
+    path_set = set(path)
+    for green in green_squares:
+        if green not in path_set:
+            return False, f"Green square {green} is not in the path"
+
+    # Check that the path does not contain any red grid cells
+    red_squares = [(i, j) for i in range(len(grid)) for j in range(len(grid[0])) if grid[i][j] == 'R']
+    for red in red_squares:
+        if red in path_set:
+            return False, f"Red square {red} is in the path"
+
+    # All checks pass
+    return True, f"Validation pass"
+
+    IMPORTANE: Check the Validation Funtion, produce a valid code that can pass the validation.
+
+  # Name of the component selected for current run
+  planner_name: "evolve_planner"
+  executor_name: "evolve_executor_fuse"
+  summary_name: "evolve_summary"
+
+  # Core parameters for the evolution process
+  max_iterations: 1000
+  target_score: 1.0
+  concurrency: 3
+
+  # Evaluator parameters  
+  evaluator:
+    timeout: 1800
+
+
+  # Database parameters
+  database:
+    storage_type: "in_memory"
+    num_islands: 3
+    population_size: 100
+    checkpoint_interval: 5
+    # If sampling_weight_power < 1, sampling weight has a weak effect
+    sampling_weight_power: 1
+

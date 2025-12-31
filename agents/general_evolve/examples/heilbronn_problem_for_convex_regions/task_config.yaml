@@ -1,0 +1,105 @@
+# Global directory configuration
+workspace_path: "./output"
+
+# Global LLM configuration (optional)
+# If evaluator or other components don't have their own llm_config, this will be used
+llm_config:
+  url: "https://xxxxxx/v1"
+  api_key: "******"
+  model: "openai/gemini-3-flash-preview"
+  temperature: 0.8
+  context_length: 128000
+  max_tokens: 32768
+  top_p: 1.0
+  timeout: 1200
+
+# ------------------------------------------------------------------------------
+# Define all available components
+# ------------------------------------------------------------------------------
+
+# All available Planner configurations
+planners:
+  evolve_planner:
+    # Planner-specific configurations (e.g., prompt templates, LLM used, etc.)
+    react_max_steps: 10
+
+# All available Executor configurations
+executors:
+  evolve_executor_fuse:
+    # ExecutorFuse-specific configurations
+    max_rounds: 3
+    react_max_steps: 15
+    score_threshold: 0.95
+
+# All available Summarizer configurations
+summarizers:
+  evolve_summary:
+    # Summarizer-specific configurations
+    react_max_steps: 10
+
+# ------------------------------------------------------------------------------
+# Define configurations for the main evolution process
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description, is the core objective of the entire evolution process
+  task: |
+    Act as an expert in computational geometry and algorithmic optimization. Your goal is to iteratively improve a Python program that solves the Heilbronn Problem for a square.
+
+    # Objective
+    The task is to solve the Heilbronn Problem for a square: place n points within the unit square $[0, 1] \times [0, 1]$ to maximize the value $A_{min}$, where $A_{min}$ is the minimum area of all possible triangles formed by any three distinct points.
+
+    For n=13, the current known optimum is approximately 0.0306. Your goal is to approach or exceed this value.
+
+    ## Refined Constraints & Definitions:
+    - **Area Calculation**: For any three points $P_i, P_j, P_k$, the area is defined as:$$Area = \frac{1}{2} |x_i(y_j - y_k) + x_j(y_k - y_i) + x_k(y_i - y_j)|$$
+    - **Objective**: Maximize $\min_{1 \le i < j < k \le n} \{Area(P_i, P_j, P_k)\}$.
+    - **Points: All points $(x, y)$ must satisfy $0 \le x, y \le 1$.
+
+    # Code Structure & Evaluation
+    Your code will be evaluated through a fixed entry point, `run_search_point(n)`, which you must not change. This function should call your main logic, which must be implemented in a function with the following signature:
+    `points, min_area = find_best_placement(n)`
+
+    This function must return:
+    1.  `points`: A `numpy.ndarray` of shape `(n, 2)`, containing the `(x, y)` coordinates of the `n` points.
+    2.  `min_area`: A `float` representing the absolute minimum area of the smallest triangle found. The evaluation script will handle scoring and normalization.
+
+    # Constraints
+    The returned solution MUST adhere to these rules:
+    - **Containment**: All points must be within the closed interval `[0, 1]` for both x and y coordinates.
+    - **Uniqueness**: All `n` points must be distinct.
+    - **Non-Collinearity**: No three points can be collinear (i.e., they must form a non-degenerate triangle).
+    - **Performance**: The entire process must complete within a 1200-second time limit.
+
+    # Strategic Guidance for Optimization (Enhanced)
+    To achieve a high-performing solution, consider these advanced strategies:
+    - **Efficiency**: Since there are $\binom{n}{3}$ triangles, use scipy.optimize or vectorized numpy operations to speed up the bottleneck (finding the minimum area).
+    - **Initialization**: Many optimal configurations for small $n$ exhibit rotational or reflective symmetry. Consider starting with points near the edges or in semi-regular patterns.
+    - **Structured Initialization**: Instead of purely random starting points, explore structured patterns like a hexagonal lattice, points on a circle, or vertices of a regular polygon inside the square. This can lead to better starting configurations.
+    - **Symmetry Exploitation**: The unit square has inherent symmetries. Exploring solutions that respect these symmetries might reduce the search space.
+
+    Focus on evolving the core logic within `find_best_placement`. Good luck!
+
+  # Name of the component selected for current run
+  planner_name: "evolve_planner"
+  executor_name: "evolve_executor_fuse"
+  summary_name: "evolve_summary"
+
+  # Core parameters of the evolution process
+  max_iterations: 60
+  target_score: 1.0
+  concurrency: 3
+
+  # Evaluator configurations
+  evaluator:
+    timeout: 1800
+
+
+  # Database configurations
+  database:
+    storage_type: "in_memory"
+    num_islands: 3
+    population_size: 60
+    checkpoint_interval: 1
+    # If sampling_weight_power < 1, sampling weight has a weak effect
+    sampling_weight_power: 2
+

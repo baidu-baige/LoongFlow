@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Evolution Tree Visualization</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- Prism.js for code highlighting -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism.min.css"
+      id="prism-theme-light"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css"
+      id="prism-theme-dark"
+      disabled
+    />
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
+    <script>
+      // Configure Prism autoloader before loading the plugin
+      window.Prism = window.Prism || {};
+      Prism.plugins = Prism.plugins || {};
+      Prism.plugins.autoloader = Prism.plugins.autoloader || {};
+      Prism.plugins.autoloader.languages_path =
+        "https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/";
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <!-- Monaco Editor for code editing and diff viewing -->
+    <script>
+      // Configure Monaco Editor loader before loading
+      require = {
+        paths: {
+          vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs",
+        },
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+    <script>
+      // Ensure diff library is available globally
+      if (typeof module !== "undefined" && module.exports) {
+        // Node.js environment
+      } else if (typeof window !== "undefined") {
+        // Browser environment - diff library should be available as window.Diff
+        // If not, we'll use the fallback simpleLineDiff function
+      }
+    </script>
+    <link rel="stylesheet" href="/static/css/style.css" />
+  </head>
+
+  <body class="dark-theme">
+    <div class="app-container">
+      <!-- Header -->
+      <header class="app-header">
+        <div class="header-content">
+          <div class="header-title">
+            <h1 class="title-text">LoongFlow Visualization</h1>
+          </div>
+          <button id="themeToggle" class="theme-toggle" title="切换主题">
+            <span class="theme-icon">🌙</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Control Panel -->
+      <div class="app-body">
+        <div class="app-left">
+          <div class="control-panel">
+            <div class="control-section-row">
+              <div class="control-section w-full mb-4">
+                <label class="control-label">Checkpoint:</label>
+                <div class="checkpoint-controls">
+                  <button
+                    id="playPauseBtn"
+                    class="control-btn play-btn"
+                    title="播放/暂停"
+                  >
+                    <span id="playPauseIcon">▶</span>
+                  </button>
+                  <div class="playback-help">
+                    <div class="playback-help-icon">?</div>
+                    <div class="playback-help-tooltip">
+                      <div class="font-semibold mb-2">播放控制说明：</div>
+                      <div>• 空格键：播放/暂停切换</div>
+                      <div>• 左箭头：上一个checkpoint</div>
+                      <div>• 右箭头：下一个checkpoint</div>
+                      <div>• 播放到最后会自动循环</div>
+                    </div>
+                  </div>
+                  <div class="slider-container">
+                    <input
+                      type="range"
+                      id="checkpointSlider"
+                      min="0"
+                      max="0"
+                      value="0"
+                      step="1"
+                      class="slider"
+                    />
+                    <div id="checkpointLabels" class="slider-labels"></div>
+                  </div>
+                  <div class="checkpoint-info">
+                    <span id="currentCheckpoint">--</span>
+                    <span class="separator">/</span>
+                    <span id="totalCheckpoints">--</span>
+                  </div>
+                  <!-- <select id="playbackSpeed" class="speed-select">
+                                <option value="500">0.5x</option>
+                                <option value="1000" selected>1x</option>
+                                <option value="2000">2x</option>
+                                <option value="5000">5x</option>
+                            </select> -->
+                </div>
+              </div>
+            </div>
+            <div class="control-section-row">
+              <div class="control-section">
+                <label class="control-label">视图模式:</label>
+                <div class="view-mode-buttons">
+                  <button
+                    id="treeViewBtn"
+                    class="view-mode-btn active"
+                    data-view="tree"
+                  >
+                    树视图
+                  </button>
+                  <button
+                    id="islandViewBtn"
+                    class="view-mode-btn"
+                    data-view="island"
+                  >
+                    岛屿视图
+                  </button>
+                </div>
+              </div>
+
+              <div class="control-section" id="orientationContainer">
+                <label class="control-label">布局方向:</label>
+                <select id="orientation" class="control-select">
+                  <option value="vertical">垂直 (从上到下)</option>
+                  <option value="vertical-bottom-up">垂直 (从下到上)</option>
+                  <option value="horizontal">水平 (从左到右)</option>
+                </select>
+              </div>
+
+              <div class="control-section">
+                <label class="control-label">节点大小:</label>
+                <div class="node-size-control">
+                  <input
+                    type="range"
+                    id="nodeSize"
+                    min="5"
+                    max="20"
+                    value="6"
+                    step="1"
+                    class="size-slider"
+                  />
+                  <span id="nodeSizeValue" class="size-value">6</span>
+                </div>
+              </div>
+
+              <div class="control-section">
+                <label class="control-label">显示标签:</label>
+                <input
+                  type="checkbox"
+                  id="showLabels"
+                  class="control-checkbox"
+                />
+              </div>
+
+              <!-- <div class="control-section">
+                        <label class="control-label">缩放:</label>
+                        <div class="zoom-controls">
+                            <button id="zoomIn" class="control-btn" title="放大">+</button>
+                            <button id="zoomOut" class="control-btn" title="缩小">−</button>
+                            <button id="resetZoom" class="control-btn" title="重置缩放">重置</button>
+                        </div>
+                    </div> -->
+            </div>
+          </div>
+
+          <!-- Main Content Area -->
+          <div class="main-content">
+            <!-- Visualization Area -->
+            <div class="visualization-area">
+              <div id="tree-container" class="tree-container"></div>
+              <div id="loadingState" class="loading-state hidden"></div>
+              <div id="tooltip" class="tooltip"></div>
+              <!-- zoom-hint Legend -->
+              <div
+                class="legend zoom-hint"
+                style="top: 20px; right: 20px; left: auto"
+              >
+                <div class="hint-title">缩放提示</div>
+                <div class="hint-text">滚轮：缩放</div>
+                <div class="hint-text">拖拽：平移</div>
+              </div>
+              <!-- Island Legend -->
+              <div
+                class="legend island-legend"
+                style="top: 20px; left: 20px; right: auto"
+              >
+                <div class="legend-title">岛屿</div>
+                <div id="islandLegendItems" class="legend-items">
+                  <!-- 动态生成 -->
+                </div>
+              </div>
+              <div
+                class="legend solution-legend"
+                style="top: 140px; left: 20px; right: auto"
+              >
+                <div class="legend-title">最优解</div>
+                <div class="legend-item">
+                  <span class="legend-badge elite">Elite</span>
+                  <span class="legend-text">精英解</span>
+                </div>
+                <div class="legend-item">
+                  <span class="legend-badge best">Best</span>
+                  <span class="legend-text">最佳解</span>
+                </div>
+                <div class="legend-item">
+                  <span class="legend-badge island-best">Island Best</span>
+                  <span class="legend-text">岛最佳解</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Statistics Panel -->
+            <div class="stats-panel">
+              <div class="stat-card">
+                <div class="stat-label">总解决方案数</div>
+                <div class="stat-value" id="totalSolutions">--</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">有效解决方案数</div>
+                <div class="stat-value" id="validSolutions">--</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">最佳分数</div>
+                <div class="stat-value" id="bestScore">--</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">迭代次数</div>
+                <div class="stat-value" id="iterations">--</div>
+              </div>
+              <div id="scoreChartCard" class="chart-card">
+                <div class="chart-card-header">
+                  <div class="chart-title">进化分数趋势</div>
+                  <div id="scoreChartSummary" class="chart-subtitle"></div>
+                  <div class="chart-actions">
+                    <button
+                      id="scoreChartExpandBtn"
+                      class="mini-btn"
+                      title="放大查看"
+                    >
+                      放大
+                    </button>
+                  </div>
+                </div>
+                <div id="scoreChartContainer" class="chart-container">
+                  <svg id="scoreChart"></svg>
+                  <div id="scoreChartEmpty" class="chart-empty">
+                    暂无 score 数据
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            id="scoreChartExpandedSection"
+            class="expanded-chart-panel hidden"
+          >
+            <div class="expanded-chart-header">
+              <div class="chart-title">进化分数趋势</div>
+              <div id="scoreChartExpandedSummary" class="chart-subtitle"></div>
+              <div class="chart-actions">
+                <button
+                  id="scoreChartCollapse"
+                  class="mini-btn"
+                  title="收起放大图"
+                >
+                  收起
+                </button>
+              </div>
+            </div>
+            <div
+              id="scoreChartExpandedContainer"
+              class="chart-container expanded"
+            >
+              <svg id="scoreChartExpanded"></svg>
+              <div id="scoreChartExpandedEmpty" class="chart-empty">
+                暂无 score 数据
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="app-right">
+          <div id="resizeHandle" class="resize-handle"></div>
+          <!-- Node Details Panel -->
+          <div id="nodeDetailsPanel" class="node-details-panel hidden">
+            <div class="panel-header">
+              <h3 class="panel-title" id="nodeTitle">Node</h3>
+              <button id="closeNodePanel" class="close-btn">×</button>
+            </div>
+            <div class="panel-tabs">
+              <button class="tab-btn active" data-tab="detail">Detail</button>
+              <button class="tab-btn" data-tab="code">Code</button>
+              <button class="tab-btn" data-tab="diff">Diff</button>
+            </div>
+            <div class="panel-content">
+              <div id="detailTab" class="tab-content active">
+                <div class="detail-view-controls">
+                  <button class="detail-mode-btn active" data-mode="formatted">
+                    Formatted
+                  </button>
+                  <button class="detail-mode-btn" data-mode="raw">
+                    Raw (JSON)
+                  </button>
+                </div>
+                <div
+                  id="detailFormattedContent"
+                  class="detail-content-mode active"
+                  style="
+                    padding: 10px;
+                    overflow-y: auto;
+                    height: calc(100% - 40px);
+                  "
+                >
+                  <!-- Formatted content populated by JS -->
+                </div>
+                <div
+                  id="detailRawContent"
+                  class="detail-content-mode hidden"
+                  style="height: calc(100% - 40px)"
+                >
+                  <pre
+                    id="rawJsonContent"
+                    class="code-content"
+                    style="margin: 0; height: 100%; overflow: auto"
+                  ></pre>
+                </div>
+              </div>
+              <div id="codeTab" class="tab-content">
+                <div class="code-container">
+                  <button id="copyCodeBtn" class="copy-btn" title="复制代码">
+                    <span class="copy-icon">📋</span>
+                    <span class="copy-text">复制</span>
+                  </button>
+                  <div
+                    id="codeContent"
+                    class="code-content monaco-editor-container"
+                  ></div>
+                </div>
+              </div>
+              <div id="diffTab" class="tab-content">
+                <div class="code-container">
+                  <div
+                    id="diffContent"
+                    class="code-content monaco-editor-container"
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <select id="checkpointSelect" class="hidden">
+      <option value="">加载中...</option>
+    </select>
+
+    <script src="/static/js/app.js"></script>
+  </body>
+</html>

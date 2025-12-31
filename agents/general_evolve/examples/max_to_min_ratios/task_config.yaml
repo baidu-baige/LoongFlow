@@ -1,0 +1,122 @@
+# Global directory configuration
+workspace_path: "./output"
+
+# Global LLM configuration(optional)
+# If evaluator or other components do not have their own llm_config, this configuration will be used
+llm_config:
+  url: "http://xxx/v1"
+  api_key: "******"
+  model: "deepseek-r1-250528"
+  temperature: 0.8
+  context_length: 128000
+  max_tokens: 32768
+  top_p: 1.0
+  timeout: 1200
+
+# ------------------------------------------------------------------------------
+# Define the configuration for all available components
+# ------------------------------------------------------------------------------
+
+# All available Planner configurations
+planners:
+  evolve_planner:
+    # Planner-specific configurations (e.g., prompt templates, LLM used, etc.)
+    react_max_steps: 10
+
+# All available Executor configurations
+executors:
+  evolve_executor_react:
+    # ExecutorReact-specific configurations
+    parallel_candidates: 1
+    max_rounds: 3
+    react_max_steps: 10
+
+  evolve_executor_chat:
+    # ExecutorChat-specific configurations
+    max_rounds: 3
+
+  evolve_executor_fuse:
+    # ExecutorFuse-specific configurations
+    max_rounds: 3
+    react_max_steps: 15
+    score_threshold: 0.99
+
+# All available Summarizer configurations
+summarizers:
+  evolve_summary:
+    # Summarizer-specific configurations
+    react_max_steps: 10
+# ------------------------------------------------------------------------------
+# Define configurations for the main evolution process
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description, is the core objective of the entire evolution process
+  task: |
+    You are an expert mathematician specializing in computational geometry. 
+    
+    # Objective:
+    Find n points in d-dimensional Euclidean space that minimize the ratio R = D_max / D_min,where D_max is the maximum Euclidean distance between any two points, and D_min is the minimum distance between any two distinct points in the set. 
+    
+    # Formal Definition:
+    Given integers n (number of points) and d (dimension), find a configuration of points P = {p1, p2, ..., pn}, where each pi ∈ ℝ^d, such that the cost function
+      R(P) = max_{i ≠ j} ||pi - pj|| / min_{i ≠ j} ||pi - pj||
+    is minimized. For reporting and comparison purposes, we define the objective function to be R^2.
+
+    # Constraints:
+    1. All point coordinates must be real numbers.
+    2. All points must be distinct.
+    3. There are no bounds on coordinate ranges, but normalizing to set D_min = 1 is allowed.
+    4. The search should favor diversity to avoid local minima.
+
+    # Optimization Goal:
+    1. Minimize R^2(P) = (D_max / D_min)^2 for a given (n, d).
+    2. Record the configuration of points and the resulting value of R^2.
+
+    # Evaluation:
+    1. Use Euclidean (L2) distance.
+    2. Report both R^2 and the corresponding point set coordinates.
+    3. Optionally provide a visualization or metric plot to assess point distribution quality.
+
+    # Target:
+    1. For (n = 16, d = 2), improve on best known R^2 ≈ 12.889
+
+    # Recommended Search Methods:
+    1. Evolutionary algorithms, gradient-free optimization, or physics-inspired particle relaxation.
+
+    # Output Format:
+    1. R^2 value
+    2. List of n points in ℝ^d, formatted as rows of real numbers
+
+    Your program will be evaluated with the command: points, ratio_squared = optimize_construct(n=16, d=2)
+
+    So you have to write a optimize_construct(n=16, d=2) function that returns three things:
+
+    * points is a 2D NumPy array of the final point positions
+    * ratio_squared is the value of max min distance ratio
+
+    Focus on breaking through the plateau by trying fundamentally different approaches - don't just tweak parameters.
+
+  # Name of the component selected for current run
+  planner_name: "evolve_planner"
+  executor_name: "evolve_executor_fuse"
+  summary_name: "evolve_summary"
+
+  # Core parameters of the evolution process
+  max_iterations: 1000
+  target_score: 1.0
+  concurrency: 2
+
+  # Evaluator configuration
+  evaluator:
+    timeout: 1200
+
+
+  # Database configurations
+  database:
+    storage_type: "in_memory"
+    num_islands: 3
+    population_size: 100
+    checkpoint_interval: 2
+    # If sampling_weight_power < 1, sampling weight has a weak effect
+    sampling_weight_power: 2
+

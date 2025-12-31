@@ -1,0 +1,95 @@
+# Global directory configuration
+workspace_path: "./output"
+
+# Global LLM configuration(optional)
+# If evaluator or other components do not have their own llm_config, this configuration will be used
+llm_config:
+  url: "https://xxxxxx/v1"
+  api_key: "******"
+  model: "openai/gemini-3-pro-preview"
+  temperature: 0.8
+  context_length: 128000
+  max_tokens: 32768
+  top_p: 1.0
+  timeout: 1200
+  # price/1000 Tokens
+  prompt_token_price: 0.002
+  # price/1000 Tokens
+  completion_token_price: 0.008
+
+# ------------------------------------------------------------------------------
+# Define the configuration for all available components
+# ------------------------------------------------------------------------------
+
+# All available Configuration for Planner
+planners:
+  evolve_planner:
+    # Planner's specific configuration, such as prompt templates, used LLM, etc.
+    react_max_steps: 10
+
+# All available Executor configuration
+executors:
+  evolve_executor_fuse:
+    # ExecutorFuse's specific configuration
+    max_rounds: 3
+    react_max_steps: 15
+    score_threshold: 0.95
+
+# All available Summarizer configuration
+summarizers:
+  evolve_summary:
+    # Summarizer's specific configuration
+    react_max_steps: 6
+
+# ------------------------------------------------------------------------------
+# Define the main evolution process configuration
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description, is the core objective of the entire evolution process
+  task: |
+    Act as an expert software developer. Your task is to iteratively improve the provided codebase. Your task is to write a search function to find a way to place num_circles disjoint disks into the unit square [0,1] x [0,1] in such a way that the sum of their radii is as big as possible.
+
+    Your program will be evaluated with the command: centers, radii, sum_radii = run_packing(num_circles)
+
+    So you have to write a run_packing(num_circles) function that returns three things:
+
+    * centers must be a 2D NumPy array of shape (n,2), where each of the n rows contains an (x, y) coordinate pair for the center of a circle,
+    * radii is an array of num_circles non-negative, finite numbers,
+    * sum_radii is the sum of the radii of the circles.
+
+    Remember, the circles must be disjoint. This will be checked automatically, with a snippet as follows: for i in range(n): for j in range(i + 1, n): dist = np.sqrt(np.sum((centers[i] - centers[j]) ** 2)) if radii[i] + radii[j] > dist: return False
+
+    Key geometric insights:
+    - Circle packings often follow hexagonal patterns in the densest regions
+    - Maximum density for infinite circle packing is pi/(2*sqrt(3)) ≈ 0.9069
+    - Edge effects make square container packing harder than infinite packing
+    - Circles can be placed in layers or shells when confined to a square
+    - Similar radius circles often form regular patterns, while varied radii allow better space utilization
+    - Perfect symmetry may not yield the optimal packing due to edge effects
+    - The run_packing results must be verified by the check_construction function provided in the initial code
+    - You have 1000 seconds of runtime
+
+  # Name of the component selected for current run
+  planner_name: "evolve_planner"
+  executor_name: "evolve_executor_fuse"
+  summary_name: "evolve_summary"
+
+  # Core parameters for the evolution process
+  max_iterations: 200
+  target_score: 1.0
+  concurrency: 3
+
+  # Evaluator configuration
+  evaluator:
+    timeout: 1200
+
+
+  # Database configuration
+  database:
+    storage_type: "in_memory"
+    num_islands: 3
+    population_size: 90
+    checkpoint_interval: 1
+    # If sampling_weight_power < 1, sampling weight has a weak effect
+    sampling_weight_power: 2
+
