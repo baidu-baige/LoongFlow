@@ -312,8 +312,6 @@ do_run() {
     echo "=================================================================="
     info "Starting ML-Evolve Agent for: $competition_id"
     echo "🔧 Environment: $ENV_NAME (activated)"
-    echo "🔧 CONDA_PREFIX: ${CONDA_PREFIX:-not set}"
-    echo "🔧 LD_LIBRARY_PATH: ${LD_LIBRARY_PATH:-not set}"
     echo "📁 Task Data: $task_data_path"
     echo "📝 Config: $agent_config_path"
     echo "🔧 Evaluator: $eval_program"

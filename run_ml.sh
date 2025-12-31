@@ -265,8 +265,6 @@ do_run() {
     info "Starting ML-Evolve Agent"
     echo "📋 Task Name: $task_name"
     echo "🔧 Environment: $ENV_NAME (activated)"
-    echo "🔧 CONDA_PREFIX: ${CONDA_PREFIX:-not set}"
-    echo "🔧 LD_LIBRARY_PATH: ${LD_LIBRARY_PATH:-not set}"
     echo "📁 Task Directory: $task_dir"
     echo "📁 Task Data: $task_data_path"
     echo "📝 Config: $task_config"
