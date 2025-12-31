@@ -77,7 +77,7 @@ _From atomic components and development frameworks to core scenario Agents, comp
 <h3 style="margin: 0; padding: 0;">⭐ <strong>LoongFlow</strong></h3>
 </div>
 <div align="center" style="margin: 10px 0;">
-  <img src="https://img.shields.io/badge/FRAMEWORK-EVOLUX-blue" alt="Backend Badge" />
+  <img src="https://img.shields.io/badge/FRAMEWORK-LoongFlow-blue" alt="Backend Badge" />
 </div>
 <div style="height: 60px; display: flex; align-items: center; justify-content: center;">
 <p align="center"><strong>Evolve Agent Framework</strong></p>

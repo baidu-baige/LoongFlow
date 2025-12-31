@@ -53,7 +53,7 @@ _从原子组件、开发框架到核心场景 Agent，提供全面的进化 Age
 <p align="center"><strong>通用进化智能体</strong></p>
 </div>
 <div style="height: 60px; display: flex; align-items: center; justify-content: center;">
-<p align="center"><strong>自动</strong>, <strong>高效</strong>, and <strong>稳定</strong>执行算法设计与优化、数学探索和发现等进化任务。</p>
+<p align="center"><strong>自动</strong>、<strong>高效</strong>、<strong>稳定</strong>执行算法设计与优化、数学探索和发现等进化任务。</p>
 </div>
 </td>
 
@@ -77,7 +77,7 @@ _从原子组件、开发框架到核心场景 Agent，提供全面的进化 Age
 <h3 style="margin: 0; padding: 0;">⭐ <strong>LoongFlow</strong></h3>
 </div>
 <div align="center" style="margin: 10px 0;">
-  <img src="https://img.shields.io/badge/FRAMEWORK-EVOLUX-blue" alt="Backend Badge" />
+  <img src="https://img.shields.io/badge/FRAMEWORK-LoongFlow-blue" alt="Backend Badge" />
 </div>
 <div style="height: 60px; display: flex; align-items: center; justify-content: center;">
 <p align="center"><strong>进化Agent框架</strong></p>
