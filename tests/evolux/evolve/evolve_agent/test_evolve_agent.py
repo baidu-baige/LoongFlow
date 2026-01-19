@@ -6,8 +6,8 @@ Unit tests for evolux.evolve.planner
 import asyncio
 import unittest
 
-from evolux.evolve import EvolveAgent
-from evolux.evolve.context import load_config
+from loongflow.framework.evolve import EvolveAgent
+from loongflow.framework.evolve.context import load_config
 
 
 class TestEvolveAgent(unittest.TestCase):

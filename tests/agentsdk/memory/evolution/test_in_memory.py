@@ -9,8 +9,8 @@ import os
 import time
 import unittest
 
-from agentsdk.memory.evolution.base_memory import Solution
-from agentsdk.memory.evolution.in_memory import InMemory
+from loongflow.agentsdk.memory.evolution.base_memory import Solution
+from loongflow.agentsdk.memory.evolution.in_memory import InMemory
 
 
 class TestEvolutionMemory(unittest.TestCase):

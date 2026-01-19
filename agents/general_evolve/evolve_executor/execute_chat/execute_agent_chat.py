@@ -24,15 +24,15 @@ from agents.general_evolve.evolve_prompt.evolve_execute_prompt import (
     EVOLVE_EXECUTOR_CHAT_SYSTEM_PROMPT_WITH_PLAN,
     EVOLVE_EXECUTOR_CHAT_USER_PROMPT_WITH_PLAN,
 )
-from agentsdk.logger import get_logger
-from agentsdk.message import ContentElement, Message
-from agentsdk.message.elements import MimeType
-from agentsdk.message.message import Role
-from agentsdk.models import BaseLLMModel, CompletionRequest, LiteLLMModel
-from evolux.evolve.context import Context, LLMConfig, Workspace
-from evolux.evolve.evaluator import EvaluationResult
-from evolux.evolve.evaluator.evaluator import LoongFlowEvaluator
-from evolux.evolve.register import Worker
+from loongflow.agentsdk.logger import get_logger
+from loongflow.agentsdk.message import ContentElement, Message
+from loongflow.agentsdk.message.elements import MimeType
+from loongflow.agentsdk.message.message import Role
+from loongflow.agentsdk.models import BaseLLMModel, CompletionRequest, LiteLLMModel
+from loongflow.framework.evolve.context import Context, LLMConfig, Workspace
+from loongflow.framework.evolve.evaluator import EvaluationResult
+from loongflow.framework.evolve.evaluator.evaluator import LoongFlowEvaluator
+from loongflow.framework.evolve.register import Worker
 
 logger = get_logger(__name__)
 

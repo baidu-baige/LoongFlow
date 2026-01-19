@@ -28,9 +28,9 @@ from agents.general_evolve.evolve_executor.execute_react.execute_agent_react imp
 )
 from agents.general_evolve.evolve_planner.plan_agent import EvolvePlanAgent
 from agents.general_evolve.evolve_summary.summary_agent import EvolveSummaryAgent
-from agentsdk.logger.logger import TraceIdFilter
-from evolux.evolve import EvolveAgent
-from evolux.evolve.context.config import EvolveChainConfig
+from loongflow.agentsdk.logger.logger import TraceIdFilter
+from loongflow.framework.evolve import EvolveAgent
+from loongflow.framework.evolve.context.config import EvolveChainConfig
 
 
 class GeneralEvolveAgent:

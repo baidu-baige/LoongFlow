@@ -9,9 +9,9 @@ from typing import Any, List
 from pydantic import BaseModel, Field
 
 from agents.ml_evolve.utils import utils
-from agentsdk.logger import get_logger
-from agentsdk.tools import FunctionTool
-from evolux.evolve.context import Context
+from loongflow.agentsdk.logger import get_logger
+from loongflow.agentsdk.tools import FunctionTool
+from loongflow.framework.evolve.context import Context
 
 logger = get_logger(__name__)
 

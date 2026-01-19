@@ -8,7 +8,7 @@ import tempfile
 
 import pytest
 
-from agentsdk.tools.ls_tool import LsTool
+from loongflow.agentsdk.tools.ls_tool import LsTool
 
 
 @pytest.fixture

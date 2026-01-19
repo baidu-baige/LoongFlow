@@ -13,22 +13,22 @@ from agents.general_evolve.evolve_planner.build_tool import build_planner_write_
 from agents.general_evolve.evolve_planner.plan_agent_finalizer import PlanAgentFinalizer
 from agents.general_evolve.evolve_prompt.evolve_plan_prompt import (EVOLVE_PLANNER_SYSTEM_PROMPT,
                                                                     EVOLVE_PLANNER_USER_PROMPT)
-from agentsdk.logger import get_logger
-from agentsdk.memory.grade import GradeMemory, MemoryConfig
-from agentsdk.message import ContentElement, Message, MimeType, Role
-from agentsdk.models import LiteLLMModel
-from agentsdk.token import SimpleTokenCounter
-from agentsdk.tools import (
+from loongflow.agentsdk.logger import get_logger
+from loongflow.agentsdk.memory.grade import GradeMemory, MemoryConfig
+from loongflow.agentsdk.message import ContentElement, Message, MimeType, Role
+from loongflow.agentsdk.models import LiteLLMModel
+from loongflow.agentsdk.token import SimpleTokenCounter
+from loongflow.agentsdk.tools import (
     Toolkit,
 )
-from evolux.evolve.compressor import EvolveCompressor
-from evolux.evolve.context import Context, LLMConfig, Workspace
-from evolux.evolve.database import EvolveDatabase
-from evolux.evolve.database.database_tool import (GetBestSolutionsTool, GetChildsByParentTool, GetMemoryStatusTool,
+from loongflow.framework.evolve.compressor import EvolveCompressor
+from loongflow.framework.evolve.context import Context, LLMConfig, Workspace
+from loongflow.framework.evolve.database import EvolveDatabase
+from loongflow.framework.evolve.database.database_tool import (GetBestSolutionsTool, GetChildsByParentTool, GetMemoryStatusTool,
                                                   GetParentsByChildIdTool, GetSolutionsTool)
-from evolux.evolve.register import Worker
-from evolux.react import AgentContext, ReActAgent
-from evolux.react.components import (DefaultObserver, DefaultReasoner, SequenceActor)
+from loongflow.framework.evolve.register import Worker
+from loongflow.framework.react import AgentContext, ReActAgent
+from loongflow.framework.react.components import (DefaultObserver, DefaultReasoner, SequenceActor)
 
 logger = get_logger(__name__)
 

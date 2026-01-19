@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 
 from agents.ml_evolve.summary.ml_summary import MLSummaryAgent
-from agentsdk.message import Message, MimeType, Role
-from evolux.evolve.context import Context, LLMConfig
-from evolux.evolve.context.config import DatabaseConfig
-from evolux.evolve.database import EvolveDatabase
-from evolux.evolve.register import register_worker
-from evolux.evolve.summary import Summary
+from loongflow.agentsdk.message import Message, MimeType, Role
+from loongflow.framework.evolve.context import Context, LLMConfig
+from loongflow.framework.evolve.context.config import DatabaseConfig
+from loongflow.framework.evolve.database import EvolveDatabase
+from loongflow.framework.evolve.register import register_worker
+from loongflow.framework.evolve.summary import Summary
 
 
 @pytest.mark.asyncio

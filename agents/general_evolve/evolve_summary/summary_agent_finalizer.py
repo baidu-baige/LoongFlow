@@ -5,12 +5,12 @@ This file provides SummaryAgentFinalizer, an enhanced version of DefaultFinalize
 that supports structured response generation using `response_format`.
 """
 
-from agentsdk.logger import print_message
-from agentsdk.message import Message, Role
-from agentsdk.models import CompletionRequest
-from evolux.react import AgentContext
+from loongflow.agentsdk.logger import print_message
+from loongflow.agentsdk.message import Message, Role
+from loongflow.agentsdk.models import CompletionRequest
+from loongflow.framework.react import AgentContext
 
-from evolux.react.components.default_finalizer import DefaultFinalizer
+from loongflow.framework.react.components.default_finalizer import DefaultFinalizer
 
 
 class SummaryAgentFinalizer(DefaultFinalizer):

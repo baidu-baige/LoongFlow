@@ -10,11 +10,11 @@ from agents import (
     EVOLVE_PLANNER_SYSTEM_PROMPT,
 )
 from agents.math_evolve.evolve_planner.plan_agent import EvolvePlanAgent
-from evolux.evolve.context import LLMConfig, Context
-from evolux.evolve.context.config import DatabaseConfig
-from evolux.evolve.database import EvolveDatabase
-from evolux.evolve.planner import Planner
-from evolux.evolve.register import register_worker
+from loongflow.framework.evolve.context import LLMConfig, Context
+from loongflow.framework.evolve.context.config import DatabaseConfig
+from loongflow.framework.evolve.database import EvolveDatabase
+from loongflow.framework.evolve.planner import Planner
+from loongflow.framework.evolve.register import register_worker
 
 
 class TestEvolvePlanner(unittest.TestCase):

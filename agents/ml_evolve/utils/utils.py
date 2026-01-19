@@ -4,7 +4,7 @@ This file define utils
 """
 from pathlib import Path
 
-from evolux.evolve.context import Context, Workspace
+from loongflow.framework.evolve.context import Context, Workspace
 
 EDA_INFO_NAME = "eda_info.txt"
 EDA_CODE_NAME = "eda.py"

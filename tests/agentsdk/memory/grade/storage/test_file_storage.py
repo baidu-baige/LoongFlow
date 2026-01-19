@@ -9,8 +9,8 @@ import uuid
 
 import pytest
 
-from agentsdk.memory.grade.storage import FileStorage
-from agentsdk.message import ContentElement, Message
+from loongflow.agentsdk.memory.grade.storage import FileStorage
+from loongflow.agentsdk.message import ContentElement, Message
 
 TEST_FILE_PATH = "./test_storage.json"
 

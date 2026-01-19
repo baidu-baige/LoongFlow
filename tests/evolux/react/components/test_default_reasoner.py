@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agentsdk.memory.grade import GradeMemory
-from agentsdk.message import Message
-from agentsdk.tools import Toolkit
-from evolux.react import AgentContext
-from evolux.react.components import DefaultReasoner
+from loongflow.agentsdk.memory.grade import GradeMemory
+from loongflow.agentsdk.message import Message
+from loongflow.agentsdk.tools import Toolkit
+from loongflow.framework.react import AgentContext
+from loongflow.framework.react.components import DefaultReasoner
 
 
 @pytest.fixture

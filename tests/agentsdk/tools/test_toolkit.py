@@ -4,16 +4,16 @@ This file provides the test cases for toolkit.
 """
 import pytest
 
-from agentsdk.message.elements import ContentElement, MimeType
-from agentsdk.tools.function_tool import FunctionTool
-from agentsdk.tools.tool_context import (
+from loongflow.agentsdk.message.elements import ContentElement, MimeType
+from loongflow.agentsdk.tools.function_tool import FunctionTool
+from loongflow.agentsdk.tools.tool_context import (
     ToolContext,
     AuthConfig,
     AuthCredential,
     AuthType,
 )
-from agentsdk.tools.tool_response import ToolResponse
-from agentsdk.tools.toolkit import Toolkit
+from loongflow.agentsdk.tools.tool_response import ToolResponse
+from loongflow.agentsdk.tools.toolkit import Toolkit
 
 
 class DummyTool(FunctionTool):

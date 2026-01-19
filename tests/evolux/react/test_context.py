@@ -6,10 +6,10 @@ import uuid
 
 import pytest
 
-from agentsdk.memory.grade import GradeMemory, MemoryConfig
-from agentsdk.message import ContentElement, Message
-from agentsdk.tools import Toolkit
-from evolux.react import AgentContext
+from loongflow.agentsdk.memory.grade import GradeMemory, MemoryConfig
+from loongflow.agentsdk.message import ContentElement, Message
+from loongflow.agentsdk.tools import Toolkit
+from loongflow.framework.react import AgentContext
 
 
 class TestMemoryProtocol:

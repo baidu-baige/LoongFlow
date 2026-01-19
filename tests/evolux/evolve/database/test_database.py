@@ -7,9 +7,9 @@ import asyncio
 import logging
 import unittest
 
-from agentsdk.memory.evolution import Solution
-from evolux.evolve.context.config import DatabaseConfig
-from evolux.evolve.database.database import EvolveDatabase
+from loongflow.agentsdk.memory.evolution import Solution
+from loongflow.framework.evolve.context.config import DatabaseConfig
+from loongflow.framework.evolve.database.database import EvolveDatabase
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)

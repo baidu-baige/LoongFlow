@@ -8,8 +8,8 @@ import uuid
 
 import pytest
 
-from agentsdk.message import ContentElement, Message, MimeType, Role
-from agentsdk.token.simple import SimpleTokenCounter
+from loongflow.agentsdk.message import ContentElement, Message, MimeType, Role
+from loongflow.agentsdk.token.simple import SimpleTokenCounter
 
 
 def create_test_message(msg_id=None, content="Hello, world!", role=Role.USER):

@@ -20,9 +20,9 @@ from agents.ml_evolve.executor import MLExecutorAgent
 from agents.ml_evolve.planner import MLPlannerAgent
 from agents.ml_evolve.summary import MLSummaryAgent
 from agents.ml_evolve.utils import system
-from agentsdk.logger.logger import TraceIdFilter
-from evolux.evolve import EvolveAgent
-from evolux.evolve.context import EvolveChainConfig
+from loongflow.agentsdk.logger.logger import TraceIdFilter
+from loongflow.framework.evolve import EvolveAgent
+from loongflow.framework.evolve.context import EvolveChainConfig
 
 
 class MLAgent:

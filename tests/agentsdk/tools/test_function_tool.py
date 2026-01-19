@@ -8,10 +8,10 @@ from typing import List, Optional
 import pytest
 from pydantic import BaseModel, Field
 
-from agentsdk.message import MimeType
-from agentsdk.tools.function_tool import FunctionTool
-from agentsdk.tools.tool_context import ToolContext
-from agentsdk.tools.tool_response import ToolResponse
+from loongflow.agentsdk.message import MimeType
+from loongflow.agentsdk.tools.function_tool import FunctionTool
+from loongflow.agentsdk.tools.tool_context import ToolContext
+from loongflow.agentsdk.tools.tool_response import ToolResponse
 
 
 class Person(BaseModel):

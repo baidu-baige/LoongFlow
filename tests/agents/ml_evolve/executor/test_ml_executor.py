@@ -9,12 +9,12 @@ import pytest
 
 from agents.ml_evolve.evaluator import MLEBenchEvaluator
 from agents.ml_evolve.executor import MLExecutorAgent
-from agentsdk.message import Message, MimeType, Role
-from evolux.evolve.context import Context, EvaluatorConfig, LLMConfig
-from evolux.evolve.context.config import DatabaseConfig
-from evolux.evolve.database import EvolveDatabase
-from evolux.evolve.executor import Executor
-from evolux.evolve.register import register_worker
+from loongflow.agentsdk.message import Message, MimeType, Role
+from loongflow.framework.evolve.context import Context, EvaluatorConfig, LLMConfig
+from loongflow.framework.evolve.context.config import DatabaseConfig
+from loongflow.framework.evolve.database import EvolveDatabase
+from loongflow.framework.evolve.executor import Executor
+from loongflow.framework.evolve.register import register_worker
 
 
 @pytest.mark.asyncio

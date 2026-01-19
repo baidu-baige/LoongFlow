@@ -11,9 +11,9 @@ import asyncio
 import pytest
 from pydantic import BaseModel, Field
 
-from agentsdk.message import ContentElement, MimeType, Message
-from agentsdk.tools import AgentTool
-from evolux.base.agent_base import AgentBase
+from loongflow.agentsdk.message import ContentElement, MimeType, Message
+from loongflow.agentsdk.tools import AgentTool
+from loongflow.framework.base.agent_base import AgentBase
 
 
 # ----------------------------

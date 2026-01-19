@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from evolux.base.agent_base import AgentBase
+from loongflow.framework.base.agent_base import AgentBase
 
 
 class DummyAgent(AgentBase):

@@ -20,26 +20,26 @@ from agents.general_evolve.evolve_prompt.evolve_summary_prompt import (
 from agents.general_evolve.evolve_summary.summary_agent_finalizer import (
     SummaryAgentFinalizer,
 )
-from agentsdk.logger import get_logger
-from agentsdk.memory.evolution import Solution
-from agentsdk.memory.grade import GradeMemory, MemoryConfig
-from agentsdk.message import ContentElement, Message, MimeType, Role
-from agentsdk.models import LiteLLMModel
-from agentsdk.token import SimpleTokenCounter
-from agentsdk.tools import (
+from loongflow.agentsdk.logger import get_logger
+from loongflow.agentsdk.memory.evolution import Solution
+from loongflow.agentsdk.memory.grade import GradeMemory, MemoryConfig
+from loongflow.agentsdk.message import ContentElement, Message, MimeType, Role
+from loongflow.agentsdk.models import LiteLLMModel
+from loongflow.agentsdk.token import SimpleTokenCounter
+from loongflow.agentsdk.tools import (
     Toolkit,
 )
-from evolux.evolve.compressor import EvolveCompressor
-from evolux.evolve.context import Context, LLMConfig, Workspace
-from evolux.evolve.database import EvolveDatabase
-from evolux.evolve.database.database_tool import (
+from loongflow.framework.evolve.compressor import EvolveCompressor
+from loongflow.framework.evolve.context import Context, LLMConfig, Workspace
+from loongflow.framework.evolve.database import EvolveDatabase
+from loongflow.framework.evolve.database.database_tool import (
     GetChildsByParentTool,
     GetParentsByChildIdTool,
     GetSolutionsTool,
 )
-from evolux.evolve.register import Worker
-from evolux.react import AgentContext, ReActAgent
-from evolux.react.components import DefaultObserver, DefaultReasoner, SequenceActor
+from loongflow.framework.evolve.register import Worker
+from loongflow.framework.react import AgentContext, ReActAgent
+from loongflow.framework.react.components import DefaultObserver, DefaultReasoner, SequenceActor
 
 logger = get_logger(__name__)
 

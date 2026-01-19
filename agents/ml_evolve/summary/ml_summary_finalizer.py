@@ -7,13 +7,13 @@ import json
 
 from pydantic import BaseModel, Field
 
-from agentsdk.message import (
+from loongflow.agentsdk.message import (
     Message,
     Role,
 )
-from agentsdk.models import CompletionRequest
-from evolux.react import AgentContext
-from evolux.react.components import DefaultFinalizer
+from loongflow.agentsdk.models import CompletionRequest
+from loongflow.framework.react import AgentContext
+from loongflow.framework.react.components import DefaultFinalizer
 
 
 class Reflection(BaseModel):

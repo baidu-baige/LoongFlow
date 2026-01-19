@@ -350,7 +350,7 @@ Additionally, validation was conducted on problems such as [mathematical puzzles
 ### EvolveAgent
 
 ```python
-from evolux.evolve import EvolveAgent
+from loongflow.framework.evolve import EvolveAgent
 
 # Config evolve agent
 agent = EvolveAgent(
@@ -372,8 +372,8 @@ For more details, please refer to [EvolveAgent](./src/evolux/evolve/README.md)
 ### ReActAgent
 
 ```python
-from evolux.react import AgentContext, ReActAgent
-from agentsdk.tools import TodoReadTool, TodoWriteTool, Toolkit
+from loongflow.framework.react import AgentContext, ReActAgent
+from loongflow.agentsdk.tools import TodoReadTool, TodoWriteTool, Toolkit
 
 # Build agent context
 toolkit = Toolkit()

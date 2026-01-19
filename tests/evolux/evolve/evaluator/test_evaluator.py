@@ -7,9 +7,9 @@ import time
 import unittest
 from unittest.mock import MagicMock
 
-from agentsdk.message import Message, ContentElement
-from evolux.evolve.context import EvaluatorConfig
-from evolux.evolve.evaluator import LoongFlowEvaluator, EvaluationResult
+from loongflow.agentsdk.message import Message, ContentElement
+from loongflow.framework.evolve.context import EvaluatorConfig
+from loongflow.framework.evolve.evaluator import LoongFlowEvaluator, EvaluationResult
 
 CONFIGURABLE_EVALUATOR_CODE = """
 import time

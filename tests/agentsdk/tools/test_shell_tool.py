@@ -5,8 +5,8 @@ Unit tests for ShellTool.
 
 import pytest
 
-from agentsdk.message import MimeType
-from agentsdk.tools.shell_tool import ShellTool, _run_command, _run_command_async
+from loongflow.agentsdk.message import MimeType
+from loongflow.agentsdk.tools.shell_tool import ShellTool, _run_command, _run_command_async
 
 
 @pytest.mark.asyncio

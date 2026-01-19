@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agentsdk.memory.grade.compressor import LLMCompressor
-from agentsdk.models import LiteLLMModel
+from loongflow.agentsdk.memory.grade.compressor import LLMCompressor
+from loongflow.agentsdk.models import LiteLLMModel
 from tests.agentsdk.memory.grade.compressor.test_message_compression import generate_test_messages
 
 

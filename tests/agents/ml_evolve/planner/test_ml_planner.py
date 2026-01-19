@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 
 from agents.ml_evolve.planner.ml_planner import MLPlannerAgent
-from evolux.evolve.context import Context, LLMConfig
-from evolux.evolve.context.config import DatabaseConfig
-from evolux.evolve.database import EvolveDatabase
-from evolux.evolve.planner import Planner
-from evolux.evolve.register import register_worker
+from loongflow.framework.evolve.context import Context, LLMConfig
+from loongflow.framework.evolve.context.config import DatabaseConfig
+from loongflow.framework.evolve.database import EvolveDatabase
+from loongflow.framework.evolve.planner import Planner
+from loongflow.framework.evolve.register import register_worker
 
 
 @pytest.mark.asyncio

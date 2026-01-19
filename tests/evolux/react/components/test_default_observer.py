@@ -5,11 +5,11 @@ Test cases for DefaultObserver
 
 import pytest
 
-from agentsdk.memory.grade import GradeMemory
-from agentsdk.message import Message, Role
-from agentsdk.tools import Toolkit
-from evolux.react import AgentContext
-from evolux.react.components import DefaultObserver
+from loongflow.agentsdk.memory.grade import GradeMemory
+from loongflow.agentsdk.message import Message, Role
+from loongflow.agentsdk.tools import Toolkit
+from loongflow.framework.react import AgentContext
+from loongflow.framework.react.components import DefaultObserver
 
 
 @pytest.fixture

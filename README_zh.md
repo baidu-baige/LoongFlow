@@ -357,7 +357,7 @@ LoongFlow 引入了一种混合进化记忆系统：
 ### EvolveAgent
 
 ```python
-from evolux.evolve import EvolveAgent
+from loongflow.framework.evolve import EvolveAgent
 
 # Config evolve agent
 agent = EvolveAgent(
@@ -379,8 +379,8 @@ result = await agent()
 #### ReActAgent
 
 ```python
-from evolux.react import AgentContext, ReActAgent
-from agentsdk.tools import TodoReadTool, TodoWriteTool, Toolkit
+from loongflow.framework.react import AgentContext, ReActAgent
+from loongflow.agentsdk.tools import TodoReadTool, TodoWriteTool, Toolkit
 
 # Build agent context
 toolkit = Toolkit()

@@ -14,14 +14,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agentsdk.logger import get_logger
-from agentsdk.memory.grade import GradeMemory, MemoryConfig
-from agentsdk.message import ContentElement, Message
-from agentsdk.message.elements import MimeType
-from agentsdk.message.message import Role
-from agentsdk.models import BaseLLMModel, CompletionRequest, LiteLLMModel
-from agentsdk.token import SimpleTokenCounter
-from agentsdk.tools import Toolkit
+from loongflow.agentsdk.logger import get_logger
+from loongflow.agentsdk.memory.grade import GradeMemory, MemoryConfig
+from loongflow.agentsdk.message import ContentElement, Message
+from loongflow.agentsdk.message.elements import MimeType
+from loongflow.agentsdk.message.message import Role
+from loongflow.agentsdk.models import BaseLLMModel, CompletionRequest, LiteLLMModel
+from loongflow.agentsdk.token import SimpleTokenCounter
+from loongflow.agentsdk.tools import Toolkit
 from agents.general_evolve.evolve_executor.utils import (
     EPSILON,
     parse_full_rewrite,
@@ -47,13 +47,13 @@ from agents.general_evolve.evolve_executor.execute_react.build_tool import (
     build_executor_write_tool,
     build_executor_ls_tool,
 )
-from evolux.evolve.compressor import EvolveCompressor
-from evolux.evolve.context import Context, LLMConfig, Workspace
-from evolux.evolve.evaluator import EvaluationResult
-from evolux.evolve.evaluator.evaluator import LoongFlowEvaluator
-from evolux.evolve.register import Worker
-from evolux.react import AgentContext, ReActAgent
-from evolux.react.components import (
+from loongflow.framework.evolve.compressor import EvolveCompressor
+from loongflow.framework.evolve.context import Context, LLMConfig, Workspace
+from loongflow.framework.evolve.evaluator import EvaluationResult
+from loongflow.framework.evolve.evaluator.evaluator import LoongFlowEvaluator
+from loongflow.framework.evolve.register import Worker
+from loongflow.framework.react import AgentContext, ReActAgent
+from loongflow.framework.react.components import (
     DefaultFinalizer,
     DefaultObserver,
     DefaultReasoner,

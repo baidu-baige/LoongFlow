@@ -10,15 +10,15 @@ from agents.general_evolve.evolve_prompt.evolve_plan_prompt import (
     EVOLVE_PLANNER_SYSTEM_PROMPT,
     EVOLVE_PLANNER_SUMMARY_PROMPT,
 )
-from agentsdk.message import (
+from loongflow.agentsdk.message import (
     ContentElement,
     Message,
     MimeType,
     Role,
 )
-from agentsdk.models import CompletionRequest
-from evolux.react import AgentContext
-from evolux.react.components import DefaultFinalizer
+from loongflow.agentsdk.models import CompletionRequest
+from loongflow.framework.react import AgentContext
+from loongflow.framework.react.components import DefaultFinalizer
 
 
 class PlanAgentFinalizer(DefaultFinalizer):

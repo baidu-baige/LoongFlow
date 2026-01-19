@@ -7,8 +7,8 @@ import uuid
 
 import pytest
 
-from agentsdk.memory.grade.storage import InMemoryStorage
-from agentsdk.message import ContentElement, Message
+from loongflow.agentsdk.memory.grade.storage import InMemoryStorage
+from loongflow.agentsdk.message import ContentElement, Message
 
 
 @pytest.fixture

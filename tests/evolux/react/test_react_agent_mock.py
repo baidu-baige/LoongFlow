@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import BaseModel, Field
 
-from agentsdk.message import ContentElement, Message, Role, ToolCallElement
-from agentsdk.models import CompletionResponse
-from evolux.react import ReActAgent
+from loongflow.agentsdk.message import ContentElement, Message, Role, ToolCallElement
+from loongflow.agentsdk.models import CompletionResponse
+from loongflow.framework.react import ReActAgent
 
 
 class TestResponse(BaseModel):

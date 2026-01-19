@@ -6,8 +6,8 @@ Tools for building tools for the executor.
 
 from pydantic import BaseModel, Field
 
-from agentsdk.tools import FunctionTool
-from evolux.evolve.context import Context, Workspace
+from loongflow.agentsdk.tools import FunctionTool
+from loongflow.framework.evolve.context import Context, Workspace
 
 
 class WriteToolArgs(BaseModel):

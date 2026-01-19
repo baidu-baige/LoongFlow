@@ -6,11 +6,11 @@ Test cases for default actor implementations
 import pytest
 from pydantic import BaseModel, Field
 
-from agentsdk.memory.grade import GradeMemory
-from agentsdk.message import ContentElement, ToolCallElement, ToolOutputElement
-from agentsdk.tools import FunctionTool, Toolkit
-from evolux.react import AgentContext
-from evolux.react.components import ParallelActor, SequenceActor
+from loongflow.agentsdk.memory.grade import GradeMemory
+from loongflow.agentsdk.message import ContentElement, ToolCallElement, ToolOutputElement
+from loongflow.agentsdk.tools import FunctionTool, Toolkit
+from loongflow.framework.react import AgentContext
+from loongflow.framework.react.components import ParallelActor, SequenceActor
 
 
 class SimpleRunArgs(BaseModel):

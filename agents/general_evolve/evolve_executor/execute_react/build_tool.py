@@ -12,13 +12,13 @@ from typing import Type, Optional
 
 from pydantic import BaseModel, Field
 
-from agentsdk.logger import get_logger
-from agentsdk.message import Message
-from agentsdk.models.base_llm_model import BaseLLMModel
-from agentsdk.tools import AgentTool, Toolkit, FunctionTool
-from evolux.evolve.context import Context, Workspace
-from evolux.evolve.evaluator.evaluator import LoongFlowEvaluator
-from evolux.react import ReActAgent
+from loongflow.agentsdk.logger import get_logger
+from loongflow.agentsdk.message import Message
+from loongflow.agentsdk.models.base_llm_model import BaseLLMModel
+from loongflow.agentsdk.tools import AgentTool, Toolkit, FunctionTool
+from loongflow.framework.evolve.context import Context, Workspace
+from loongflow.framework.evolve.evaluator.evaluator import LoongFlowEvaluator
+from loongflow.framework.react import ReActAgent
 
 logger = get_logger(__name__)
 

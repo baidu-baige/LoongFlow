@@ -27,16 +27,16 @@ from agents.general_evolve.evolve_prompt.evolve_execute_prompt import (
     EVOLVE_EXECUTOR_REACT_SYSTEM_PROMPT,
     EVOLVE_EXECUTOR_REACT_USER_PROMPT,
 )
-from agentsdk.logger import get_logger
-from agentsdk.memory.grade.memory import GradeMemory
-from agentsdk.message import ContentElement, Message, MimeType, Role
-from agentsdk.models import BaseLLMModel, LiteLLMModel
-from agentsdk.tools import Toolkit
-from evolux.evolve.context import Context, LLMConfig, Workspace
-from evolux.evolve.evaluator import LoongFlowEvaluator
-from evolux.evolve.register import Worker
-from evolux.react import AgentContext, ReActAgent
-from evolux.react.components import (
+from loongflow.agentsdk.logger import get_logger
+from loongflow.agentsdk.memory.grade.memory import GradeMemory
+from loongflow.agentsdk.message import ContentElement, Message, MimeType, Role
+from loongflow.agentsdk.models import BaseLLMModel, LiteLLMModel
+from loongflow.agentsdk.tools import Toolkit
+from loongflow.framework.evolve.context import Context, LLMConfig, Workspace
+from loongflow.framework.evolve.evaluator import LoongFlowEvaluator
+from loongflow.framework.evolve.register import Worker
+from loongflow.framework.react import AgentContext, ReActAgent
+from loongflow.framework.react.components import (
     DefaultFinalizer,
     DefaultReasoner,
     SequenceActor,

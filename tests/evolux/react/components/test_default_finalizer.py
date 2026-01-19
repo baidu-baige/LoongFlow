@@ -8,15 +8,15 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import BaseModel, Field
 
-from agentsdk.message import (
+from loongflow.agentsdk.message import (
     ContentElement,
     MimeType,
     ToolCallElement,
     ToolOutputElement,
     ToolStatus,
 )
-from agentsdk.tools import FunctionTool
-from evolux.react.components import DefaultFinalizer
+from loongflow.agentsdk.tools import FunctionTool
+from loongflow.framework.react.components import DefaultFinalizer
 
 
 class TestResponse(BaseModel):

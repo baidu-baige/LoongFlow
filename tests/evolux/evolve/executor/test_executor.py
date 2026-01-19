@@ -13,13 +13,13 @@ from agents.math_evolve.evolve_executor.execute_react.execute_agent_react import
     ExecuteAgentReactConfig,
     EvolveExecuteAgentReact,
 )
-from agentsdk.logger.message_logger import print_message
-from agentsdk.message import Message
-from agentsdk.message.elements import MimeType
-from evolux.evolve.context import Context, EvaluatorConfig, LLMConfig
-from evolux.evolve.evaluator.evaluator import LoongFlowEvaluator
-from evolux.evolve.executor import Executor
-from evolux.evolve.register import register_worker
+from loongflow.agentsdk.logger.message_logger import print_message
+from loongflow.agentsdk.message import Message
+from loongflow.agentsdk.message.elements import MimeType
+from loongflow.framework.evolve.context import Context, EvaluatorConfig, LLMConfig
+from loongflow.framework.evolve.evaluator.evaluator import LoongFlowEvaluator
+from loongflow.framework.evolve.executor import Executor
+from loongflow.framework.evolve.register import register_worker
 
 
 def get_project_root():

@@ -9,8 +9,8 @@ import pytest
 from agents.ml_evolve.evocoder.evaluator import EDAEvaluator, EvoCoderEvaluatorConfig
 from agents.ml_evolve.evocoder.evocoder import EvoCoder, EvoCoderConfig
 from agents.ml_evolve.evocoder.stage_context_provider import EDAContextProvider
-from agentsdk.message import Message, MimeType, Role
-from evolux.evolve.context import LLMConfig
+from loongflow.agentsdk.message import Message, MimeType, Role
+from loongflow.framework.evolve.context import LLMConfig
 
 
 @pytest.mark.asyncio

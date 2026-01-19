@@ -14,9 +14,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agentsdk.models.litellm_model import LiteLLMModel
-from agentsdk.models.llm_request import CompletionRequest
-from agentsdk.models.llm_response import CompletionResponse
+from loongflow.agentsdk.models.litellm_model import LiteLLMModel
+from loongflow.agentsdk.models.llm_request import CompletionRequest
+from loongflow.agentsdk.models.llm_response import CompletionResponse
 
 
 @pytest.mark.asyncio

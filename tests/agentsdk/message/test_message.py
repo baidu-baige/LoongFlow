@@ -9,7 +9,7 @@ from datetime import datetime
 
 import pytest
 
-from agentsdk.message import (
+from loongflow.agentsdk.message import (
     ContentElement,
     Message,
     MimeType,

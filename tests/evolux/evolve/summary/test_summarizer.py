@@ -11,13 +11,13 @@ from agents.math_evolve.evolve_prompt.evolve_summary_prompt import (
     EVOLVE_SUMMARY_SYSTEM_PROMPT,
     EVOLVE_SUMMARY_USER_PROMPT,
 )
-from agentsdk.memory.evolution import Solution
-from agentsdk.message import ContentElement, Message
-from evolux.evolve.context import Context, LLMConfig
-from evolux.evolve.context.config import DatabaseConfig
-from evolux.evolve.database import EvolveDatabase
-from evolux.evolve.register import register_worker
-from evolux.evolve.summary import Summary
+from loongflow.agentsdk.memory.evolution import Solution
+from loongflow.agentsdk.message import ContentElement, Message
+from loongflow.framework.evolve.context import Context, LLMConfig
+from loongflow.framework.evolve.context.config import DatabaseConfig
+from loongflow.framework.evolve.database import EvolveDatabase
+from loongflow.framework.evolve.register import register_worker
+from loongflow.framework.evolve.summary import Summary
 
 
 class TestEvolveSummarizer:

@@ -6,12 +6,12 @@ This file provides ExecuteAgentObserver
 import json
 from typing import List, Dict
 
-from agentsdk.logger.logger import get_logger
-from agentsdk.message import Message
-from agentsdk.message.elements import ToolOutputElement
-from agentsdk.message.message import Role
-from evolux.react import AgentContext
-from evolux.react.components import DefaultObserver
+from loongflow.agentsdk.logger.logger import get_logger
+from loongflow.agentsdk.message import Message
+from loongflow.agentsdk.message.elements import ToolOutputElement
+from loongflow.agentsdk.message.message import Role
+from loongflow.framework.react import AgentContext
+from loongflow.framework.react.components import DefaultObserver
 
 logger = get_logger(__name__)
 

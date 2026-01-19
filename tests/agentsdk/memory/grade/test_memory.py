@@ -8,12 +8,12 @@ from typing import List
 
 import pytest
 
-from agentsdk.memory.grade import LongTermMemory, MediumTermMemory, ShortTermMemory
-from agentsdk.memory.grade.compressor import Compressor
-from agentsdk.memory.grade.memory import GradeMemory, MemoryConfig
-from agentsdk.memory.grade.storage import InMemoryStorage
-from agentsdk.message import ContentElement, Message, Role
-from agentsdk.token import SimpleTokenCounter
+from loongflow.agentsdk.memory.grade import LongTermMemory, MediumTermMemory, ShortTermMemory
+from loongflow.agentsdk.memory.grade.compressor import Compressor
+from loongflow.agentsdk.memory.grade.memory import GradeMemory, MemoryConfig
+from loongflow.agentsdk.memory.grade.storage import InMemoryStorage
+from loongflow.agentsdk.message import ContentElement, Message, Role
+from loongflow.agentsdk.token import SimpleTokenCounter
 
 
 class MockCompressor(Compressor):

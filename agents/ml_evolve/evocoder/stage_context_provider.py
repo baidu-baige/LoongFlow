@@ -23,7 +23,7 @@ from agents.ml_evolve.prompt.evocoder import (
     TrainAndPredictPrompts,
     WorkflowPrompts,
 )
-from agentsdk.message import Message, Role
+from loongflow.agentsdk.message import Message, Role
 
 
 @dataclass

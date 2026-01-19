@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import pytest
 
-from agentsdk.tools.tool_context import ToolContext, AuthType, AuthConfig, AuthCredential, HttpCredentials
+from loongflow.agentsdk.tools.tool_context import ToolContext, AuthType, AuthConfig, AuthCredential, HttpCredentials
 
 
 @pytest.fixture

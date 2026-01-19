@@ -4,8 +4,8 @@ Unit tests for message logger.
 """
 import uuid
 
-from agentsdk.logger import message_logger as ml
-from agentsdk.message import (
+from loongflow.agentsdk.logger import message_logger as ml
+from loongflow.agentsdk.message import (
     Message,
     ContentElement,
     ThinkElement,

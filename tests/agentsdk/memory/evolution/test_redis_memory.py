@@ -10,8 +10,8 @@ import os
 import time
 import unittest
 
-from agentsdk.memory.evolution.base_memory import Solution
-from agentsdk.memory.evolution.redis_memory import RedisMemory
+from loongflow.agentsdk.memory.evolution.base_memory import Solution
+from loongflow.agentsdk.memory.evolution.redis_memory import RedisMemory
 
 
 class TestEvolutionMemory(unittest.TestCase):

@@ -15,12 +15,12 @@ from agents.ml_evolve.evocoder.stage_context_provider import (
     TaskConfig,
 )
 from agents.ml_evolve.prompt.evocoder import PackageInstallerPrompts
-from agentsdk.logger import get_logger
-from agentsdk.message import ContentElement, Message, MimeType, Role
-from agentsdk.models import CompletionRequest, LiteLLMModel
-from evolux.base import AgentBase
-from evolux.evolve.context import LLMConfig
-from evolux.evolve.evaluator.evaluator import EvaluationResult, EvaluationStatus
+from loongflow.agentsdk.logger import get_logger
+from loongflow.agentsdk.message import ContentElement, Message, MimeType, Role
+from loongflow.agentsdk.models import CompletionRequest, LiteLLMModel
+from loongflow.framework.base import AgentBase
+from loongflow.framework.evolve.context import LLMConfig
+from loongflow.framework.evolve.evaluator.evaluator import EvaluationResult, EvaluationStatus
 
 logger = get_logger(__name__)
 

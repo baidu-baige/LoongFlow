@@ -7,10 +7,10 @@ from typing import Dict, List, Optional
 import pytest
 from pydantic import BaseModel, Field
 
-from agentsdk.message import Message
-from agentsdk.models import LiteLLMModel
-from agentsdk.tools import LsTool, ReadTool, ShellTool, TodoReadTool, TodoWriteTool, Toolkit, WriteTool
-from evolux.react import ReActAgent
+from loongflow.agentsdk.message import Message
+from loongflow.agentsdk.models import LiteLLMModel
+from loongflow.agentsdk.tools import LsTool, ReadTool, ShellTool, TodoReadTool, TodoWriteTool, Toolkit, WriteTool
+from loongflow.framework.react import ReActAgent
 
 
 class LocationInfo(BaseModel):
