@@ -1,0 +1,40 @@
+name: Deploy Docs
+
+on:
+  push:
+    branches:
+      - main        # 只有推送到 main 分支时触发
+    paths:
+      - 'docs/**'   # 只有 docs 目录变动
+      - 'mkdocs.yml' # 或者配置文件变动时才触发
+      - '.github/workflows/publish.yml'
+
+permissions:
+  contents: write  # 必须有写权限才能推送到 gh-pages 分支
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+
+      - name: Install dependencies
+        run: |
+          pip install mkdocs-material mkdocs-static-i18n
+
+      - name: Configure Git user
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+      - name: Deploy to GitHub Pages
+        run: |
+          # 使用 mkdocs 内置命令直接部署
+          # --force 会覆盖 gh-pages 分支的旧历史，确保存储库干净
+          mkdocs gh-deploy --force

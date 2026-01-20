@@ -1,0 +1,149 @@
+site_name: LoongFlow
+site_url: https://baidu-baige.github.io/LoongFlow/ 
+site_description: A Cognitive Plan-Execute-Summarize Agent Framework
+repo_name: baidu-baige/LoongFlow
+repo_url: https://github.com/baidu-baige/LoongFlow
+edit_uri: edit/main/docs/
+
+copyright: Copyright &copy; 2025 LoongFlow Team
+
+# 主题配置
+theme:
+  name: material
+  language: en
+  # logo: assets/images/loongflow_fr_v1.jpg
+  # favicon: assets/images/loongflow_fr_v1.jpg
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.indexes     # 允许点击目录标题
+    - navigation.sections    # 侧边栏分块
+    - navigation.expand      # 默认展开
+    - navigation.top         # 返回顶部按钮
+    - navigation.tracking    # URL 随滚动变化
+    - toc.follow             # 目录随滚动高亮
+    - content.code.copy      # 代码块复制按钮
+    - content.action.edit    # 编辑此页
+  palette:
+    # 浅色模式
+    - scheme: default
+      primary: white
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # 深色模式
+    - scheme: slate
+      primary: black
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+# 插件配置
+plugins:
+  - search
+  - i18n:
+      docs_structure: folder
+      languages:
+        - locale: en
+          name: English
+          default: true
+          build: true
+          # === 英文导航配置 (在这里定义) ===
+          nav:
+            - Home: index.md
+            - Overview:
+                - Quick Start: overview/quickstart.md
+                - Features & Guarantees: overview/features.md
+                - FAQ: overview/faq.md
+                - Performance: overview/performance.md
+                - Design: overview/design.md
+            - Agents:
+                - General Evolve: agents/general_evolve.md
+                - ML Evolve: agents/ml_evolve.md
+            - Components:
+                - Models:
+                    - components/models/index.md
+                - Tools:
+                    - components/tools/index.md
+                - Message:
+                    - components/message/index.md
+                - Memory:
+                    - Overview: components/memory/overview.md
+                    - Evolution Memory: components/memory/evolution.md
+                    - Grade Memory: components/memory/grade.md
+                    - Configuration: components/memory/configuration.md
+
+            - Build Agents:
+                - Getting Started: build_agent/get_started.md
+                - General Evolve Paradigm: build_agent/general_evolve.md
+                - ML Evolve Paradigm: build_agent/ml_evolve.md
+                - Custom Agent Development: build_agent/custom_guide.md
+            - Reference:
+                - reference: reference/reference.md
+
+        - locale: zh
+          name: 简体中文
+          build: true
+          # === 中文导航配置 (在这里定义，文件名路径保持不变，只改Key) ===
+          nav:
+            - 首页: index.md
+            - 概览:
+                - 快速开始: overview/quickstart.md
+                - 特性与保障: overview/features.md
+                - 常见问题: overview/faq.md
+                - 性能: overview/performance.md
+                - 设计: overview/design.md
+            - 智能体:
+                - 通用进化: agents/general_evolve.md
+                - 机器学习进化: agents/ml_evolve.md
+            - 组件:
+                - 模型:
+                    - components/models/index.md
+                - 工具:
+                    - components/tools/index.md
+                - 消息:
+                    - components/message/index.md
+                - 记忆:
+                    - 概览: components/memory/overview.md
+                    - 进化存储器: components/memory/evolution.md
+                    - 等级存储器: components/memory/grade.md
+                    - 配置指南: components/memory/configuration.md
+                
+            - 构建智能体:
+                - 准备工作: build_agent/get_started.md
+                - 通用进化范式: build_agent/general_evolve.md
+                - 机器学习范式: build_agent/ml_evolve.md
+                - 自定义开发: build_agent/custom_guide.md
+            - 参考手册:
+                - 参考手册: reference/reference.md
+
+# Markdown 扩展
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: pymdownx.superfences.fence_div_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+# 版本管理
+# extra:
+#   version:
+#     provider: mike
+
+
+extra_css:
+  - assets/stylesheets/extra.css
