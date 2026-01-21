@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/agents/general_evolve/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/agents/general_evolve/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/agents/general_evolve/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/agents/ml_evolve/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/agents/ml_evolve/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/agents/ml_evolve/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/build_agent/custom_guide/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/build_agent/custom_guide/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/build_agent/custom_guide/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/build_agent/general_evolve/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/build_agent/general_evolve/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/build_agent/general_evolve/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/build_agent/get_started/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/build_agent/get_started/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/build_agent/get_started/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/build_agent/ml_evolve/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/build_agent/ml_evolve/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/build_agent/ml_evolve/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/components/memory/configuration/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/memory/configuration/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/memory/configuration/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/components/memory/evolution/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/memory/evolution/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/memory/evolution/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/components/memory/grade/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/memory/grade/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/memory/grade/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/components/memory/overview/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/memory/overview/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/memory/overview/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/components/message/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/message/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/message/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/components/models/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/models/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/models/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/components/tools/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/tools/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/tools/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/overview/design/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/overview/design/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/overview/design/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/overview/faq/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/overview/faq/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/overview/faq/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/overview/features/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/overview/features/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/overview/features/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/overview/performance/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/overview/performance/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/overview/performance/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/overview/quickstart/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/overview/quickstart/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/overview/quickstart/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/reference/reference/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/reference/reference/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/reference/reference/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/agents/general_evolve/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/agents/general_evolve/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/agents/general_evolve/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/agents/ml_evolve/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/agents/ml_evolve/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/agents/ml_evolve/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/build_agent/custom_guide/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/build_agent/custom_guide/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/build_agent/custom_guide/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/build_agent/general_evolve/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/build_agent/general_evolve/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/build_agent/general_evolve/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/build_agent/get_started/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/build_agent/get_started/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/build_agent/get_started/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/build_agent/ml_evolve/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/build_agent/ml_evolve/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/build_agent/ml_evolve/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/components/memory/configuration/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/memory/configuration/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/memory/configuration/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/components/memory/evolution/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/memory/evolution/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/memory/evolution/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/components/memory/grade/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/memory/grade/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/memory/grade/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/components/memory/overview/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/memory/overview/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/memory/overview/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/components/message/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/message/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/message/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/components/models/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/models/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/models/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/components/tools/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/components/tools/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/components/tools/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/overview/design/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/overview/design/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/overview/design/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/overview/faq/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/overview/faq/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/overview/faq/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/overview/features/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/overview/features/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/overview/features/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/overview/performance/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/overview/performance/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/overview/performance/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/overview/quickstart/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/overview/quickstart/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/overview/quickstart/"/>
+    </url>
+    <url>
+        <loc>https://baidu-baige.github.io/LoongFlow/zh/reference/reference/</loc>
+        <lastmod>2026-01-21</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://baidu-baige.github.io/LoongFlow/zh/reference/reference/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://baidu-baige.github.io/LoongFlow/reference/reference/"/>
+    </url>
+</urlset>
