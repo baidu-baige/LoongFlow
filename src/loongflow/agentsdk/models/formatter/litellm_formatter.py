@@ -131,6 +131,10 @@ class LiteLLMFormatter(BaseFormatter):
             f"convert message after: {json.dumps(llm_messages, ensure_ascii=False)}"
         )
 
+        provider_name = self.get_provider_for_model(
+            model_name=model_name, model_provider=model_provider
+        )
+
         kwargs: Dict[str, Any] = {
             "base_url": base_url,
             "api_key": api_key,
@@ -139,9 +143,7 @@ class LiteLLMFormatter(BaseFormatter):
             "stream": False,  # TODO: support streaming later
             "cache": {"no-cache": True},
             "timeout": timeout,
-            "custom_llm_provider": self.get_provider_for_model(
-                model_name=model_name, model_provider=model_provider
-            ),
+            "custom_llm_provider": provider_name,
         }
 
         for key in ["temperature", "top_p", "max_tokens", "stop"]:
@@ -150,7 +152,7 @@ class LiteLLMFormatter(BaseFormatter):
                 kwargs[key] = value
 
         # Determine provider (required for non-OpenAI models)
-        logger.debug(f"custom_llm_provider: {kwargs['custom_llm_provider']}")
+        logger.debug(f"custom_llm_provider: {provider_name}")
 
         # Optional generation settings
         if request.temperature is not None:
