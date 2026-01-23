@@ -50,7 +50,7 @@ class LLMConfig(BaseModel):
         description="The provider of the model, such as 'openai', 'azure', etc.",
     )
     temperature: float = Field(
-        default=0.8,
+        default=None,
         ge=0.0,
         le=2.0,
         description="Controls randomness. Lower is more deterministic.",
@@ -62,7 +62,7 @@ class LLMConfig(BaseModel):
         default=16384, gt=0, description="The maximum number of tokens to generate."
     )
     top_p: float = Field(
-        default=1.0, ge=0.0, le=1.0, description="Controls nucleus sampling."
+        default=None, ge=0.0, le=1.0, description="Controls nucleus sampling."
     )
     timeout: int = Field(
         default=600,
