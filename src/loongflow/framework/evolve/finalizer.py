@@ -68,7 +68,7 @@ class LoongFlowFinalizer(Finalizer):
 
         try:
             memory_status = database.memory_status()
-            global_status: Dict[str, Any] = memory_status.get("global", {})
+            global_status: Dict[str, Any] = memory_status.get("global_status", {})
 
             best_score = global_status.get("best_score")
             best_iteration = global_status.get("best_iteration")
@@ -85,8 +85,8 @@ class LoongFlowFinalizer(Finalizer):
             best_evaluation = "N/A"
             best_solutions = database.get_best_solutions(top_k=1)
             if best_solutions and len(best_solutions) > 0:
-                best_solution = best_solutions[0].solution
-                best_evaluation = best_solutions[0].evaluation
+                best_solution = best_solutions[0]["solution"]
+                best_evaluation = best_solutions[0]["evaluation"]
 
             start_time_str = datetime.fromtimestamp(start_time).strftime(
                 "%Y-%m-%d %H:%M:%S"
