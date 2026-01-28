@@ -3,13 +3,13 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["src", "."]
-include = ["loongflow*", "agents*"]
+where = ["src"]
+include = ["loongflow*"]
 namespaces = true
 
 [project]
 name = "loongflow"
-version = "0.1.0"
+version = "0.0.1"
 description = "agent"
 authors = [{ name = "loongflow", email = "loongflow@baidu.com" }]
 readme = "README.md"
@@ -31,7 +31,6 @@ dependencies = [
     "litellm>=1.80.10",
     "flask>=3.1.2",
     "sympy>=1.14.0",
-    "claude-agent-sdk>=0.1.20",
     "psutil>=7.2.1",
 ]
 

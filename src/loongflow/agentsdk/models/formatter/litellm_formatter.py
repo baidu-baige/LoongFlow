@@ -26,63 +26,10 @@ from loongflow.agentsdk.models.llm_response import CompletionResponse, Completio
 logger = get_logger(__name__)
 
 
-# def _format_tool_parser(
-#     response: CompletionResponse, model_url: str, model_name: str
-# ) -> CompletionResponse:
-#     """Format tool parser output"""
-#     if not response.content:
-#         return response
-#
-#     new_elements = []
-#     tool_calls_added = False
-#     elements = list(response.content)
-#     for i, element in enumerate(elements):
-#         if isinstance(element, ContentElement) and element.data:
-#             tool_calls, content = tool_parser(element.data, model_url, model_name)
-#             if tool_calls:
-#                 logger.debug(
-#                     f"Tool call found in completion response, {tool_calls}, "
-#                     + f"content: {content}, origin_content: {element.data}"
-#                 )
-#                 tool_calls_added = True
-#                 new_elements.append(
-#                     ContentElement(mime_type=MimeType.TEXT_PLAIN, data=content)
-#                 )
-#                 for tool_call in tool_calls:
-#                     new_elements.append(
-#                         ToolCallElement(
-#                             type=tool_call["tool_type"],
-#                             target=(
-#                                 tool_call["tool_name"]
-#                                 if isinstance(tool_call["tool_name"], str)
-#                                 else ""
-#                             ),
-#                             arguments=(
-#                                 tool_call["tool_parameter"]
-#                                 if isinstance(tool_call["tool_parameter"], dict)
-#                                 else {}
-#                             ),
-#                         )
-#                     )
-#             else:
-#                 new_elements.append(element)
-#         else:
-#             new_elements.append(element)
-#
-#     if not tool_calls_added:
-#         return response
-#
-#     return CompletionResponse(
-#         id=response.id,
-#         finish_reason=response.finish_reason,
-#         content=new_elements,
-#     )
-
-
 class LiteLLMFormatter(BaseFormatter):
     """
     Formatter that bridges LoongFlow message and response schemas
-    with LiteLLM’s API semantics.
+    with LiteLLM's API semantics.
 
     - Request direction: LoongFlow → LiteLLM
     - Response direction: LiteLLM → LoongFlow
@@ -98,6 +45,10 @@ class LiteLLMFormatter(BaseFormatter):
         "deepseek": "deepseek",
     }
 
+    def __init__(self):
+        super().__init__()
+        self._current_model_name = None
+
     def format_request(
         self,
         request: CompletionRequest,
@@ -111,22 +62,10 @@ class LiteLLMFormatter(BaseFormatter):
     ) -> Dict[str, Any]:
         """
         Convert LoongFlow CompletionRequest into kwargs suitable for `litellm.acompletion`.
-
-        Args:
-            request: LoongFlow CompletionRequest containing messages, tools, etc.
-            model_name: Model ID or deployment name (e.g., "gpt-4o-mini").
-            base_url: Optional API base URL for LiteLLM.
-            api_key: Optional API key for LiteLLM.
-            stream: Whether to enable streaming in the LLM call.
-            timeout: Timeout in seconds.
-            model_provider: Optional model provider name.
-
-        Returns:
-            A dictionary of arguments ready for `litellm.acompletion(**kwargs)`.
         """
-        # logger.debug("convert message before：")
-        # print_message(request.messages)
-        llm_messages = self._convert_messages(request.messages)
+        self._current_model_name = model_name
+
+        llm_messages = self._convert_messages(request.messages, model_name)
         logger.debug(
             f"convert message after: {json.dumps(llm_messages, ensure_ascii=False)}"
         )
@@ -237,7 +176,15 @@ class LiteLLMFormatter(BaseFormatter):
         # Default to OpenAI provider
         return "openai"
 
-    def _convert_messages(self, messages: List[Message]) -> List[Dict[str, Any]]:
+    def _is_deepseek_reasoner(self, model_name: str) -> bool:
+        """
+        check if the model name is deepseek-reasoner model
+        """
+        if not model_name:
+            return False
+        return "deepseek-reasoner" in model_name.lower()
+
+    def _convert_messages(self, messages: List[Message], model_name: str) -> List[Dict[str, Any]]:
         """
         Convert LoongFlow Message objects into OpenAI/LiteLLM-compatible messages.
 
@@ -257,7 +204,7 @@ class LiteLLMFormatter(BaseFormatter):
         for msg in messages:
             role = msg.role.value if hasattr(msg.role, "value") else msg.role
 
-            content_texts, structured_items, tool_calls, tool_outputs = (
+            content_texts, structured_items, tool_calls, tool_outputs, thinking_content = (
                 self._collect_message_elements(msg)
             )
 
@@ -269,7 +216,7 @@ class LiteLLMFormatter(BaseFormatter):
             if tool_calls:
                 converted.append(
                     self._merge_tool_calls(
-                        role, content_texts, structured_items, tool_calls
+                        role, content_texts, structured_items, tool_calls, thinking_content, model_name
                     )
                 )
                 continue
@@ -287,13 +234,13 @@ class LiteLLMFormatter(BaseFormatter):
     def _collect_message_elements(
         self, msg: Message
     ) -> tuple[
-        list[str], list[dict[str, Any]], list[dict[str, Any]], list["ToolOutputElement"]
+        list[str], list[dict[str, Any]], list[dict[str, Any]], list["ToolOutputElement"], list[str]
     ]:
         """
         Extract different element types from a Message and categorize them.
-        Returns (content_texts, structured_items, tool_calls, tool_outputs)
+        Returns (content_texts, structured_items, tool_calls, tool_outputs, thinking_content)
         """
-        content_texts, structured_items, tool_calls, tool_outputs = [], [], [], []
+        content_texts, structured_items, tool_calls, tool_outputs, thinking_content = [], [], [], [], []
 
         for elem in msg.content:
             if isinstance(elem, ContentElement):
@@ -312,11 +259,11 @@ class LiteLLMFormatter(BaseFormatter):
             elif isinstance(elem, ToolOutputElement):
                 tool_outputs.append(elem)
             elif isinstance(elem, ThinkElement):
-                content_texts.append(f"[think]{elem.content}")
+                thinking_content.append(elem.content)
             else:
                 content_texts.append("[unsupported element]")
 
-        return content_texts, structured_items, tool_calls, tool_outputs
+        return content_texts, structured_items, tool_calls, tool_outputs, thinking_content
 
     def _append_content_element(
         self,
@@ -381,6 +328,8 @@ class LiteLLMFormatter(BaseFormatter):
         content_texts: list[str],
         structured_items: list[dict[str, Any]],
         tool_calls: list[dict[str, Any]],
+        thinking_content: list[str],
+        model_name: str,
     ) -> dict[str, Any]:
         """Merge content and tool_calls into a single assistant message."""
         combined_text = "\n".join(content_texts).strip() if content_texts else ""
@@ -389,11 +338,18 @@ class LiteLLMFormatter(BaseFormatter):
         else:
             content_field = combined_text
 
-        return {
+        message = {
             "role": "assistant" if role == "assistant" else role,
             "content": content_field,
             "tool_calls": tool_calls,
         }
+
+        if self._is_deepseek_reasoner(model_name) and role == "assistant":
+            if thinking_content:
+                reasoning = "\n".join(thinking_content)
+                message["reasoning_content"] = reasoning
+
+        return message
 
     def _convert_standard_message(
         self,
@@ -439,12 +395,19 @@ class LiteLLMFormatter(BaseFormatter):
         """
         Parse a single streamed delta chunk (ModelResponseStream) into CompletionResponse.
         """
-        delta = raw.choices[0].delta if raw.choices else None
-        finish_reason = raw.choices[0].finish_reason if raw.choices else None
+        if not raw.choices:
+            return CompletionResponse(id=raw.id, content=[])
+
+        delta = raw.choices[0].delta
+        finish_reason = raw.choices[0].finish_reason
 
         elements: list[ContentElement | ToolCallElement | ThinkElement] = []
 
         if delta:
+            reasoning = getattr(delta, "reasoning_content", None)
+            if reasoning:
+                elements.append(ThinkElement(content=reasoning))
+
             if delta.content:
                 elements.append(
                     ContentElement(mime_type=MimeType.TEXT_PLAIN, data=delta.content)
@@ -468,11 +431,20 @@ class LiteLLMFormatter(BaseFormatter):
         """
         Parse a single streamed delta chunk (dict) into CompletionResponse.
         """
-        delta = data.get("choices", [{}])[0].get("delta", {})
-        finish_reason = data.get("choices", [{}])[0].get("finish_reason", None)
+        choices = data.get("choices", [])
+        if not choices:
+            return CompletionResponse(id=data.get("id", "stream"), content=[])
+
+        choice = choices[0]
+        delta = choice.get("delta", {})
+        finish_reason = choice.get("finish_reason", None)
 
         elements: List[ContentElement | ToolCallElement | ThinkElement] = []
-        if "content" in delta:
+
+        if "reasoning_content" in delta and delta["reasoning_content"]:
+            elements.append(ThinkElement(content=delta["reasoning_content"]))
+
+        if "content" in delta and delta["content"]:
             elements.append(
                 ContentElement(
                     mime_type=MimeType.TEXT_PLAIN,
@@ -506,36 +478,56 @@ class LiteLLMFormatter(BaseFormatter):
 
         choice = raw.choices[0]
         message = getattr(choice, "message", {})
-        content = message.get("content")
-        tool_calls = message.get("tool_calls")
+
+        content = getattr(message, "content", None) or message.get("content")
+        tool_calls = getattr(message, "tool_calls", None) or message.get("tool_calls")
+
+        reasoning_content = getattr(message, "reasoning_content", None) or message.get("reasoning_content")
 
         elements: List[ContentElement | ToolCallElement | ThinkElement] = []
 
-        # Handle normal text content
+        if reasoning_content:
+            elements.append(ThinkElement(content=reasoning_content))
+
         if content:
             elements.append(ContentElement(mime_type=MimeType.TEXT_PLAIN, data=content))
 
         # Handle tool calls (OpenAI style)
         if tool_calls:
             for call in tool_calls:
-                func = call.get("function", {})
-                args = func.get("arguments", {})
+                if isinstance(call, dict):
+                    func = call.get("function", {})
+                else:
+                    func = getattr(call, "function", {})
+                    if hasattr(func, "to_dict"):
+                        func = func.to_dict()
+                    elif not isinstance(func, dict):
+                        func = {
+                            "name": getattr(func, "name", ""),
+                            "arguments": getattr(func, "arguments", "")
+                        }
+
+                target_name = func.get("name", "")
+                args_raw = func.get("arguments", {})
+
                 tool_err = ""
+                final_args = {}
 
-                if isinstance(args, str):
-                    args, method, err_msg = self._safe_parse_json(args)
+                if isinstance(args_raw, str):
+                    final_args, method, err_msg = self._safe_parse_json(args_raw)
                     logger.debug(f"[tool-call] parse method used: {method}")
-
                     if method == "failed":
                         tool_err = err_msg
+                elif isinstance(args_raw, dict):
+                    final_args = args_raw
 
                 elements.append(
                     ToolCallElement(
                         metadata={
                             "tool_arguments_err": tool_err,
                         },
-                        target=func.get("name", ""),
-                        arguments=args if isinstance(args, dict) else {},
+                        target=target_name,
+                        arguments=final_args,
                     )
                 )
 
