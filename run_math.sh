@@ -167,10 +167,10 @@ COMMAND_ARRAY=(
 echo "✅ Checks passed. Preparing to run task: ${TASK_NAME}"
 echo "------------------------------------------------------------------"
 echo "🚀 Command to execute:"
-echo "PYTHONPATH=./src ${COMMAND_ARRAY[@]}"
+echo "PYTHONPATH=$PYTHONPATH:./src ${COMMAND_ARRAY[@]}"
 echo "------------------------------------------------------------------"
 
-export PYTHONPATH=./src
+export PYTHONPATH=$PYTHONPATH:./src
 
 if [ "$RUN_IN_BACKGROUND" = true ]; then
   echo "🏃 Starting task in background..."
