@@ -441,12 +441,30 @@ class PESAgent(AgentBase):
 
             # Main loop: wait for any task to complete, then try to start a new one.
             while self._running_tasks and not self._stop_event.is_set():
+                # Create a task that waits for the stop event
+                stop_waiter = asyncio.create_task(self._stop_event.wait())
+                tasks_to_wait = self._running_tasks | {stop_waiter}
+
                 done, pending = await asyncio.wait(
-                    self._running_tasks, return_when=asyncio.FIRST_COMPLETED
+                    tasks_to_wait, return_when=asyncio.FIRST_COMPLETED
                 )
 
+                # If stop_waiter completed, break immediately
+                if stop_waiter in done:
+                    stop_waiter.cancel()
+                    break
+
+                # Cancel the stop_waiter if it's still pending
+                if stop_waiter in pending:
+                    stop_waiter.cancel()
+                    try:
+                        await stop_waiter
+                    except asyncio.CancelledError:
+                        pass
+
                 for task in done:
-                    self._running_tasks.remove(task)
+                    if task in self._running_tasks:
+                        self._running_tasks.remove(task)
                     try:
                         await task  # Check for exceptions in the completed task
                     except Exception as e:
