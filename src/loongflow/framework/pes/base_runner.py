@@ -446,7 +446,6 @@ class BasePESRunner(ABC):
         def signal_handler(sig_name: str) -> None:
             nonlocal interrupt_task
             print(f"\n🛑 Received signal {sig_name}. Initiating graceful shutdown...")
-            asyncio.create_task(agent.interrupt())
             # Set the stop event immediately to unblock the main loop
             agent._stop_event.set()
             # Create interrupt task and keep reference
