@@ -153,7 +153,7 @@ class RedisMemory(EvolveMemory):
         with self._lock:
             self._prepare_solution(solution)
             solution_dict = solution.to_dict()
-            solution_json = json.dumps(solution_dict)
+            solution_json = json.dumps(solution_dict, ensure_ascii=False)
 
             # Store in both solutions and populations
             self.redis.hset(self.solutions_key, solution.solution_id, solution_json)
@@ -168,7 +168,7 @@ class RedisMemory(EvolveMemory):
             map_elites_feature = self._calculate_MAP_Elites(solution)
             solution.metadata["MAP_Elite_feature"] = map_elites_feature
             solution_dict = solution.to_dict()
-            solution_json = json.dumps(solution_dict)
+            solution_json = json.dumps(solution_dict, ensure_ascii=False)
             self.redis.hset(self.populations_key, solution.solution_id, solution_json)
             self.redis.hset(self.solutions_key, solution.solution_id, solution_json)
 
@@ -214,7 +214,7 @@ class RedisMemory(EvolveMemory):
 
         with self._lock:
             solution_dict = updated_solution.to_dict()
-            solution_json = json.dumps(solution_dict)
+            solution_json = json.dumps(solution_dict, ensure_ascii=False)
 
             # Store in both solutions and populations
             self.redis.hset(self.solutions_key, solution.solution_id, solution_json)
@@ -595,7 +595,7 @@ class RedisMemory(EvolveMemory):
             )
             for k, v in feature_stats.items():
                 if isinstance(v, (dict, list)):
-                    self.redis.hset(self.feature_stats_key, k, json.dumps(v))
+                    self.redis.hset(self.feature_stats_key, k, json.dumps(v, ensure_ascii=False))
                 else:
                     self.redis.hset(self.feature_stats_key, k, str(v))
 
@@ -620,7 +620,7 @@ class RedisMemory(EvolveMemory):
                         with open(file_path, "r") as f:
                             solution_dict = json.load(f)
                             solution = Solution.from_dict(solution_dict)
-                            solution_json = json.dumps(solution_dict)
+                            solution_json = json.dumps(solution_dict, ensure_ascii=False)
                             self.redis.hset(
                                 self.solutions_key, solution.solution_id, solution_json
                             )
@@ -1007,14 +1007,14 @@ class RedisMemory(EvolveMemory):
             if feature_stats:
                 for k, v in feature_stats.items():
                     if isinstance(v, (dict, list)):
-                        pipe.hset(self.feature_stats_key, k, json.dumps(v))
+                        pipe.hset(self.feature_stats_key, k, json.dumps(v, ensure_ascii=False))
                     else:
                         pipe.hset(self.feature_stats_key, k, str(v))
 
             if diversity_cache:
                 for k, v in diversity_cache.items():
                     if isinstance(v, (dict, list)):
-                        pipe.hset(self.diversity_cache_key, k, json.dumps(v))
+                        pipe.hset(self.diversity_cache_key, k, json.dumps(v, ensure_ascii=False))
                     else:
                         pipe.hset(self.diversity_cache_key, k, str(v))
             if diversity_reference_set:  # Update diversity reference set
@@ -1094,7 +1094,7 @@ class RedisMemory(EvolveMemory):
                         self.redis.sadd(self.elites_key, solution.solution_id)
 
             self.redis.hset(island_feature_maps_key, feature_key, solution.solution_id)
-        return json.dumps(feature_coords)
+        return json.dumps(feature_coords, ensure_ascii=False)
 
     def _update_island(self, solution: Solution) -> None:
         """
@@ -1469,7 +1469,7 @@ class RedisMemory(EvolveMemory):
                         evaluation=migrant.evaluation,
                         metadata={**migrant.metadata, "migrated": True},
                     )
-                    migrant_copy_json = json.dumps(migrant_copy.to_dict())
+                    migrant_copy_json = json.dumps(migrant_copy.to_dict(), ensure_ascii=False)
                     self.redis.hset(
                         self.populations_key,
                         migrant_copy.solution_id,

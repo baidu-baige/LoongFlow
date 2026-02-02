@@ -106,7 +106,7 @@ class EvaluationResult:
         return d
 
     def to_json(self, indent: int = 2) -> str:
-        return json.dumps(self.to_dict(), indent=indent)
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=indent)
 
 
 class Evaluator(ABC):

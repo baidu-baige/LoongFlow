@@ -242,6 +242,6 @@ def evaluate(program_path):
         },
         "artifacts": {
             "execution_time": f"{eval_time:.2f}s",
-            "points": json.dumps(points.tolist()),
+            "points": json.dumps(points.tolist(), ensure_ascii=False),
         }
     }

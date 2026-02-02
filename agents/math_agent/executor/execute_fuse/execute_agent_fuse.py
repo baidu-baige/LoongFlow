@@ -184,7 +184,7 @@ class EvolveExecuteAgentFuse(Worker):
             # Write round-level history (append all candidate entries found this round)
             history.add_round(round_idx, [r.to_dict() for r in round_results])
             Workspace.write_executor_history(
-                context, json.dumps(history.to_list(), indent=2)
+                context, json.dumps(history.to_list(), ensure_ascii=False, indent=2)
             )
 
             if not round_results:
@@ -497,7 +497,7 @@ class EvolveExecuteAgentFuse(Worker):
             )
 
             result = {
-                "content": json.dumps(evaluation_result.to_dict()),
+                "content": json.dumps(evaluation_result.to_dict(), ensure_ascii=False),
                 "total_completion_tokens": total_completion_tokens,
                 "total_prompt_tokens": total_prompt_tokens,
             }
@@ -535,7 +535,7 @@ class EvolveExecuteAgentFuse(Worker):
         return ExecutionContext(
             parent_info_file_path=parent_info_path,
             parent_core=float(parent_data.get("score", 0.0)),
-            parent_solution=json.dumps(parent_data),
+            parent_solution=json.dumps(parent_data, ensure_ascii=False),
             stage1_plan=stage1_plan,
             stage1_plan_file_path=plan_path,
         )
@@ -650,7 +650,7 @@ class EvolveExecuteAgentFuse(Worker):
                 solution_file_path=s_path,
                 evaluation_file_path=e_path,
                 score=score,
-                reason=json.dumps(eval_data),
+                reason=json.dumps(eval_data, ensure_ascii=False),
                 source="disk",
             )
             results.append(cr)

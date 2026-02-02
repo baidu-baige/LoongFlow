@@ -231,7 +231,7 @@ but score did not beat target. Score: {calculated_score:.12f} <= Target: {TARGET
         },
         "artifacts": {
             "execution_time": f"{eval_time:.2f}s",
-            "best_list": json.dumps(serializable_list),
+            "best_list": json.dumps(serializable_list, ensure_ascii=False),
             "list_length": len(serializable_list),
         },
     }

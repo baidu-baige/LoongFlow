@@ -138,7 +138,7 @@ class EvolveExecuteAgentChat(Worker):
             # Write round-level history (append all candidate entries found this round)
             history.add_round(round_idx, [r.to_dict() for r in round_results])
             Workspace.write_executor_history(
-                context, json.dumps(history.to_list(), indent=2)
+                context, json.dumps(history.to_list(), ensure_ascii=False, indent=2)
             )
 
             if not round_results:
@@ -341,7 +341,7 @@ class EvolveExecuteAgentChat(Worker):
             )
             await self.install_missing_package(context, evaluation_result)
 
-        evaluation_result_json = json.dumps(evaluation_result.to_dict())
+        evaluation_result_json = json.dumps(evaluation_result.to_dict(), ensure_ascii=False)
         Workspace.write_executor_file(
             context,
             f"{candidate_path}/evaluation_{random_str}.json",

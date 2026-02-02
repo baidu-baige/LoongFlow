@@ -116,7 +116,7 @@ class EvolvePlanAgent(Worker):
 
         # Save parent into parent_info.json
         parent_dict = parent if parent else init_parent
-        parent_json = json.dumps(parent_dict, indent=4)
+        parent_json = json.dumps(parent_dict, ensure_ascii=False, indent=4)
         Workspace.write_planner_parent_info(context, parent_json)
         parent_info_file_path = Workspace.get_planner_parent_info_path(context)
         logger.debug(

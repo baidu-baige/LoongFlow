@@ -282,4 +282,4 @@ if __name__ == "__main__":
     res = evaluate(file)
     import json
 
-    print(json.dumps(res, indent=4))
+    print(json.dumps(res, ensure_ascii=False, indent=4))

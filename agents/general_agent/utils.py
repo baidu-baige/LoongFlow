@@ -143,7 +143,7 @@ def convert_function_tool_to_custom_tool(tool: FunctionTool) -> Dict[str, Any]:
                 if isinstance(result_data, str):
                     text = result_data
                 else:
-                    text = json.dumps(result_data, indent=2)
+                    text = json.dumps(result_data, ensure_ascii=False, indent=2)
             else:
                 text = "No result"
             return {"content": [{"type": "text", "text": text}]}

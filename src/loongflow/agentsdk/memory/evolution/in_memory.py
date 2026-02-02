@@ -780,7 +780,7 @@ class InMemory(EvolveMemory):
                         self.elites.add(solution.solution_id)
 
             island_feature_map[feature_key] = solution.solution_id
-        return json.dumps(feature_coords)
+        return json.dumps(feature_coords, ensure_ascii=False)
 
     def _update_island(self, solution: Solution) -> None:
         """
