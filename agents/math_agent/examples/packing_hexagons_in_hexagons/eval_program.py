@@ -331,7 +331,7 @@ def evaluate(program_path):
     )
 
     if not is_valid:
-        error_msg = json.dumps(validation_details)
+        error_msg = json.dumps(validation_details, ensure_ascii=False, indent=2)
         summary = f"Validation failed: {error_msg}"
         print(summary, file=sys.stderr)
         return {

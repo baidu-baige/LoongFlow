@@ -418,7 +418,7 @@ class PESAgent(AgentBase):
             init_evaluation = await self.evaluator.evaluate(init_solution_message)
             self.config.evolve.initial_score = init_evaluation.score
             self.config.evolve.initial_evaluation = json.dumps(
-                init_evaluation.to_dict(), ensure_ascii=False
+                init_evaluation.to_dict(), ensure_ascii=False, indent=2
             )
 
         if self.config.evolve.initial_score and self.config.evolve.initial_score >= self.target_score:

@@ -119,7 +119,7 @@ def workflow() -> dict:
             'model_scores': model_scores,
             'fold_scores': fold_scores,
             'model_score_stds': model_score_stds
-        }, f, indent=2)
+        }, f, ensure_ascii=False, indent=2)
 
     # 7. Create output dictionary
     output_info = {

@@ -4,7 +4,7 @@ workspace_path: "./output-hello-world"
 # Global LLM configuration(optional)
 # If evaluator or other components do not have their own llm_config, this configuration will be used
 llm_config:
-  model: "deepseek-v3.2"
+  model: "anthropic/deepseek-v3.2"
 
 # ------------------------------------------------------------------------------
 # Define the configuration for all available components
@@ -16,9 +16,9 @@ planners:
     # Planner's specific configuration, such as prompt templates, used LLM, etc.
     # system_prompt: xxx
     # build_in_tools: ["Skill", "Read", "Write", "Bash"]
-    # skills: ["skill-creator"]
+    skills: ["skill-creator"]
     permission_mode: "acceptEdits"
-    max_turns: 10
+    max_turns: 50
     # max_thinking_tokens: 1000
 
 # All available Executor configuration
@@ -26,10 +26,9 @@ executors:
   general_executor:
     # system_prompt: xxx
     # build_in_tools: ["Skill", "Read", "Write", "Bash"]
-    # skills: ["skill-creator"]
-    max_rounds: 1
+    skills: ["skill-creator"]
     permission_mode: "acceptEdits"
-    max_turns: 20
+    max_turns: 50
     # max_thinking_tokens: 1000
 
 # All available Summarizer configuration
@@ -38,9 +37,9 @@ summarizers:
     # Summarizer's specific configuration
     # system_prompt: xxx
     # build_in_tools: ["Skill", "Read", "Write", "Bash"]
-    # skills: ["skill-creator"]
+    skills: ["skill-creator"]
     permission_mode: "acceptEdits"
-    max_turns: 10
+    max_turns: 50
     # max_thinking_tokens: 1000
 
 # ------------------------------------------------------------------------------
@@ -49,8 +48,8 @@ summarizers:
 evolve:
   # Task description, is the core objective of the entire evolution process
   task: |
-    Help me write a documentation for the LoongFlow project.
-           
+    请帮我写一下，如何利用LoongFlow框架快速搭建针对GPU利用率低的定位Agent的Skills
+
   # Name of the component selected for current run
   planner_name: "general_planner"
   executor_name: "general_executor"
@@ -58,7 +57,7 @@ evolve:
 
   # Core parameters for the evolution process
   max_iterations: 200
-  target_score: 0.5
+  target_score: 1.0
   concurrency: 1
 
   # Evaluator configuration
@@ -67,9 +66,9 @@ evolve:
     agent:
       # system_prompt: xxx
       # build_in_tools: ["Skill", "Read", "Write", "Bash"]
-      # skills: ["skill-creator"]
+      skills: ["skill-creator"]
       permission_mode: "acceptEdits"
-      max_turns: 20
+      max_turns: 50
       # max_thinking_tokens: 1000
 
   # Database configuration

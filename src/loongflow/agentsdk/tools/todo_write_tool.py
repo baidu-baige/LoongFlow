@@ -120,7 +120,7 @@ class TodoWriteTool(FunctionTool):
             todos_data = [item.model_dump() for item in validated.todos]
 
             with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(todos_data, f, indent=2)
+                json.dump(todos_data, f, ensure_ascii=False, indent=2)
 
             return ToolResponse(
                 content=[

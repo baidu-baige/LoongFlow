@@ -164,7 +164,7 @@ def build_evaluator_solution_tool(
             Workspace.write_executor_file(
                 context,
                 f"{candidate_path}/evaluation_{random_str}.json",
-                json.dumps(data, indent=2),
+                json.dumps(data, ensure_ascii=False, indent=2),
             )
 
             Workspace.write_executor_file(
@@ -189,11 +189,11 @@ def build_evaluator_solution_tool(
             )
             history = {
                 "solution_file_path": code_file_path,
-                "evaluation_result": json.dumps(data, indent=2),
+                "evaluation_result": json.dumps(data, ensure_ascii=False, indent=2),
                 "evaluate_timestamp": time.time(),
             }
 
-            history_log.append(json.dumps(history, indent=2) + "\n")
+            history_log.append(json.dumps(history, ensure_ascii=False, indent=2) + "\n")
             with open(history_log_file_path, "w") as f:
                 f.writelines(history_log)
 

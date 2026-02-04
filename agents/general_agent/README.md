@@ -16,24 +16,16 @@ source .venv/bin/activate
 
 # Install dependencies
 uv pip install -e .
-
-# Install Claude Code(Choose 1 of 3 ways):
-# For maxOS/Linux/WSL
-curl -fsSL https://claude.ai/install.sh | bash
-
-# For Homebrew
-brew install --cask claude-code
-
-# For WinGet
-winget install Anthropic.ClaudeCode
 ```
 
 ### 2. Configure API Key and URL
 
+Currently, General Agent only supports Anthropic models. You can set environment variables to configure API key and URL or fill in the information in the `llm_config` section of the configuration file.
+
 ```bash
 # Set OpenAI or Anthropic or Litellm-supported API key and URL
-export OPENAI_API_KEY="your-deepseek-api-key"
-export OPENAI_BASE_URL="https://api.deepseek.com/v1"
+export ANTHROPIC_API_KEY="your-anthropic-api-key"
+export ANTHROPIC_BASE_URL="your-model-endpoint"
 ```
 
 ### 3. Run Example Task
@@ -79,10 +71,9 @@ workspace_path: "./output-task-name"
 
 # llm_config: LLM configuration
 llm_config:
-  model: "gpt-4o-mini"              # Or "deepseek-v3.2"
-  model_provider: "openai"          # Optional: model provider, it will be inferred from model name, if not set, will use OPENAI as default provider
-  url: "https://api.openai.com/v1"  # Optional: If set, it will be used first; otherwise, it will be read from ENV
-  api_key: "xxx"                    # Optional: If set, it will be used first; otherwise, it will be read from ENV
+  model: "anthropic/model-name"         # model-provider/model-name
+  url: "https://api.anthropic.com"      # Optional: If set, it will be used first; otherwise, it will be read from ENV
+  api_key: "xxx"                        # Optional: If set, it will be used first; otherwise, it will be read from ENV
 
 # evolve: Evolution process configuration
 evolve:
@@ -109,7 +100,6 @@ executors:
   general_executor:
     skills: ["code_generation", "testing"]
     permission_mode: "acceptEdits"
-    max_rounds: 1                           # Retry count, currently only applicable to the executor.
 
 # summarizers: Summarizer configuration
 summarizers:
@@ -207,7 +197,7 @@ mkdir my_custom_task
 cat > my_custom_task/task_config.yaml << 'EOF'
 workspace_path: "./output-my-task"
 llm_config:
-  model: "gpt-4o-mini"
+  model: "anthropic/deepseek-v3.2"
 
 planners:
   general_planner:
@@ -216,7 +206,7 @@ planners:
 
 executors:
   general_executor:
-    max_rounds: 1
+    skills: ["skill-creator"]
 
 summarizers:
   general_summarizer:
@@ -248,9 +238,8 @@ cd LoongFlow
 ## 🔧 Advanced Configuration Options
 
 ### Permission Modes
-- `"prompt"`: Ask for confirmation before each operation
+- `"default"`: Standard permission behavior
 - `"acceptEdits"`: Auto-approve file edits (recommended)
-- `"acceptAll"`: Auto-approve all operations
 
 ### Built-in Tools
 ```yaml
@@ -262,9 +251,6 @@ build_in_tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "Skill", "Task
 general_planner:
   max_turns: 15                    # Increase turns for better planning quality
   max_thinking_tokens: 2000        # Control thinking tokens
-
-general_executor:  
-  max_rounds: 3                    # Increase execution rounds
 ```
 
 ---

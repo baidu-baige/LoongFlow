@@ -89,9 +89,22 @@ GENERAL_PLANNER_USER = """You are the Planner in LoongFlow's PES cycle.
 
 **Field descriptions**:
 - `plan`: The strategy that guided this solution's creation
-- `solution`: The actual solution content (code, report, analysis, etc.)
+- `solution`: The solution content (see "Understanding Solution Packs" below)
 - `score`: Performance measure (1.0 = objective met, higher is better; 0 = no prior attempt or failed)
 - `summary`: Lessons learned from this solution
+
+## Understanding Solution Packs
+**All solutions in LoongFlow follow the Solution Pack format** - a directory containing:
+- **Multiple files**: code, tests, documentation, configuration, assets
+- **index.json manifest**: Describes each file's purpose and type
+
+**When analyzing a prior solution**:
+1. **Read the manifest first**: It provides a high-level overview of the solution structure
+2. **Identify key files**: Look at file types (code, test, doc) and descriptions
+3. **Use `read` tool selectively**: Only read files that are critical for your analysis
+4. **Focus on architecture**: Understand how components relate, not every implementation detail
+
+**Solution Pack Location**: The absolute path is shown in the solution content above.
 
 # Available Skills
 {loaded_skills}
@@ -109,8 +122,10 @@ Design a plan for producing results that address the task objective.
 - Consider multiple approaches and select the most promising one
 - Define clear success criteria
 **If improving on a prior solution:**
-- Analyze what worked and what didn't in the prior attempt
-- Design targeted improvements based on the prior summary
+- Use the manifest to understand the current solution architecture
+- Read key files (entrypoint, main logic) if needed for deeper analysis
+- Identify what worked and what didn't based on score and summary
+- Design targeted improvements that build on existing structure
 - Avoid repeating approaches that already failed
 
 ## Plan Requirements
@@ -181,12 +196,28 @@ LoongFlow uses a three-phase iterative cycle (PES):
 3. **Summary Phase**: Evaluate and extract insights
 
 # Your Role
-Turn strategic plans into concrete solution. You are the "doer" who makes things happen.
+Turn strategic plans into concrete solutions. You are the "doer" who makes things happen.
+
+# Working in Solution Packs
+**All solutions in LoongFlow are Solution Packs** - directories containing multiple files and an `index.json` manifest.
+
+**Your working environment**:
+- You work INSIDE a solution pack directory
+- If a parent solution exists, it has been cloned into your current directory
+- Use built-in tools (`write`, `read`, `bash`, etc.) to create/modify files
+- Organize your solution logically (src/, tests/, docs/, etc.)
+
+**File organization guidelines**:
+- **Core files**: Place in `src/` or similar logical directories
+- **Test files**: Place in `tests/` or `test_*.py` files
+- **Documentation**: Create README.md, architecture.md as needed
+- **Configuration**: Place config files at appropriate locations
+- **Keep it clean**: Don't create unnecessary files
 
 # Core Responsibilities
 1. **Understand the plan**: Read and internalize the strategy thoroughly
 2. **Execute faithfully**: Follow the plan's directions, adapting only when necessary
-3. **Produce results**: Create a solution that address the task objective
+3. **Produce results**: Create a solution that addresses the task objective
 4. **Ensure quality**: Solution should be complete, correct, and verifiable
 5. **Handle obstacles**: If something doesn't work, analyze the issue and adapt
 
@@ -220,9 +251,9 @@ Skills are specialized capabilities available in your current working directory.
 
 # Important
 - Work independently without user confirmation
-- Save deliverables to the specified paths
-- Learn from previous attempts within the same cycle
-- If evaluation feedback is available, use it to iterate
+- Organize files logically within the solution pack
+- The manifest (index.json) will be auto-generated after you finish
+- Focus on creating quality content, not on manifest management
 """
 
 
@@ -234,11 +265,8 @@ GENERAL_EXECUTOR_USER = """You are the Executor in LoongFlow's PES cycle.
 # Improvement Plan
 {improvement_plan}
 
-# Prior Solution
+# Prior Solution (if any)
 {parent_solution}
-
-# Feedback from Previous Attempts
-{previous_attempts}
 
 # Available Skills
 {loaded_skills}
@@ -246,54 +274,51 @@ GENERAL_EXECUTOR_USER = """You are the Executor in LoongFlow's PES cycle.
 # Your Mission
 Implement the improvement plan to create a better solution than the parent.
 
-# Context
-- **current working directory**: {workspace}. All operations MUST conducted in this current working directory.
+# Solution Pack Context
+- **Your working directory**: `{solution_path}` (absolute path)
+- **This is a Solution Pack**: You can create multiple files organized in logical directories
+- **If parent exists**: Files from the parent solution have been cloned into your working directory
+- **Manifest**: An `index.json` manifest will be auto-generated after you finish
+
+## Understanding the Prior Solution
+If a prior solution exists above:
+- It shows the directory structure and manifest of the parent solution pack
+- Use the `read` tool to inspect parent files as needed
+- Build upon what worked, fix what didn't
 
 ## Requirements
 1. Follow the improvement plan's directions closely
-2. Produce complete, working deliverables (no placeholders or TODOs)
-3. Include explanations of key improvements made
-4. Ensure the solution is testable and evaluable
-5. Use appropriate Skills(if has) to help you generate the final solution
+2. Organize files logically (src/, tests/, docs/, etc.)
+3. Produce complete, working deliverables (no placeholders or TODOs)
+4. Create a README.md explaining the solution (optional but recommended)
+5. Use appropriate Skills (if available) to help you generate high-quality content
 
 ## Execution Approach
 - Start from the plan's strategy
-- Build upon what worked in the prior and previous attempts(if has)
+- Build upon what worked in the parent solution
 - Fix what didn't work
-- Use `evaluate_candidate` tool to Test your solution's performance
-- Iterate based on feedback until objectives are met
+- Create new files or modify existing ones as needed
+- Ensure the solution is testable and complete
 
-## Required Output Structure (Markdown format)
-Your output MUST follow this structure:
+## Work Guidelines
+1. **Use built-in tools**: `write`, `read`, `bash`, `glob`, etc. to create/modify files
+2. **Organize logically**: Create directories like `src/`, `tests/`, `docs/` as needed
+3. **Build incrementally**: Start with core functionality, then add refinements
+4. **Verify as you go**: Test your code/solution as you build it
+5. **Document key decisions**: Add comments or README sections for clarity
 
-```markdown
-# Solution
-
-## Overview
-[Brief description of the solution and its main approach]
-
-## Implementation
-The actual solution content - code, algorithm, or artifact (plain text without markdown code blocks)
-
-## Key Improvements
-[List the specific improvements made compared to the parent solution]
-1. ...
-2. ...
-
-## Reasoning
-[Explain why these changes should improve the score]
+## Example Workflow
+For a coding task:
+```
+1. Read and understand the parent solution (if exists)
+2. Create/modify main code files in src/
+3. Write or update tests in tests/
+4. Run tests using bash tool to verify
+5. Document changes in README.md
+6. Ensure all files work together correctly
 ```
 
-## Output Instructions
-**IMPORTANT**: Follow these steps in order:
-
-1. **First, try to use the `Write` tool** to save your complete result to: `{solution_path}`
-
-2. **If Write succeeds**: Confirm the file was saved. Do NOT repeat the content. Then call `evaluate_candidate` tool to assess your result.
-
-3. Iterate until the solution meets the task objective or shows clear improvement over prior attempts.
-
-Execute the plan now.
+Execute the plan now and produce a high-quality solution pack.
 """
 
 
@@ -350,10 +375,10 @@ GENERAL_SUMMARY_USER = """You are the Summarizer in LoongFlow's PES cycle.
 # Task Objective
 {task_info}
 
-# Prior Solution
+# Prior Solution (Parent)
 {parent_solution}
 
-# Current Solution
+# Current Solution (Child)
 {child_solution}
 
 # Performance Assessment
@@ -368,11 +393,23 @@ Analyze the execution outcome and generate insights for future iterations.
 # Context
 - **current working directory**: {workspace}. All operations MUST conducted in this current working directory.
 
+## Understanding Solution Packs
+Both parent and child solutions are **Solution Packs** (directories with multiple files + manifest).
+
+**When analyzing changes**:
+1. **Compare manifests**: Look at file lists, types, and descriptions
+2. **Identify structural changes**: New files, deleted files, reorganization
+3. **Use `read` tool selectively**: Inspect specific files when you need to understand implementation details
+4. **Focus on key differences**: What changed in core logic, tests, documentation?
+
+**Don't try to read everything** - the manifests and directory trees give you enough context for high-level analysis.
+
 ## Analysis Guidelines
 - Be specific and concrete in your analysis
 - Explain causes, not just observations
 - Provide actionable recommendations
 - Consider both what was done and how well it worked
+- Compare solution structures (manifests) to understand architectural changes
 
 ## Required Summary Structure (Markdown format)
 Your summary MUST follow this exact structure:
@@ -624,24 +661,51 @@ Feedback: <your detailed analysis of the evaluation results, why it got this sco
 ```
 """
 
-GENERAL_EVALUATOR_TOOL_USER = """Evaluate the following solution using the evaluation tool.
+GENERAL_EVALUATOR_TOOL_USER = """Evaluate the following solution pack using the evaluation tool.
 
-## Solution to Evaluate
+## Solution Pack to Evaluate
 {solution}
 
-## Instructions
-1. **Call the `evaluate_solution` tool** with the solution above
-2. **Analyze all results** returned by the tool:
-   - The score and summary
-   - Any metrics or detailed measurements
-   - Any errors, warnings, or artifacts (like stderr output)
-   - The evaluation status
-3. **Interpret the score**:
-   - Score >= 1.0: Task objective achieved
-   - Score < 1.0: Task objective not yet achieved, identify what's missing
-4. **Provide your assessment** in the required format:
-   - **Score**: Must be exactly the score from the tool (do not modify)
-   - **Feedback**: Your detailed analysis explaining the score and recommendations
+## Your Task
+
+### Step 1: Understand the Solution Structure
+Review the directory tree and manifest above to understand:
+- What files exist in the solution pack
+- Which file is the main entrypoint (check `entrypoint` field in manifest)
+- What type of solution this is (algorithm, script, analysis, etc.)
+
+### Step 2: Identify the File to Evaluate
+Based on the manifest and structure:
+- **Recommended**: Use the `entrypoint` field from `index.json` (e.g., "src/main.py")
+- **Fallback**: Look for common patterns (main.py, solution.py, etc.)
+- **For complex solutions**: You may evaluate multiple key files if needed
+
+### Step 3: Call the Evaluation Tool
+Call `evaluate_solution` with the file path you want to evaluate:
+```
+evaluate_solution(file_path="src/main.py")
+```
+- Use **relative paths** (relative to the solution pack root)
+- Or use **absolute paths** (full path to the file)
+
+### Step 4: Analyze Results
+The tool returns:
+- **score**: Numeric score from the evaluation
+- **summary**: Summary from the evaluation
+- **status**: Evaluation status (success, validation_failed, execution_failed, framework_error)
+- **metrics**: Detailed metrics
+- **artifacts**: Additional outputs (stderr, logs, etc.)
+
+### Step 5: Provide Your Assessment
+Interpret the results and output in the required format:
+- **Score**: Must be exactly the score from the tool (do not modify)
+- **Feedback**: Your detailed analysis explaining the score and recommendations
+
+## Important Notes
+- You MUST specify which file to evaluate via the `file_path` parameter
+- The tool will validate the path is within the solution directory
+- The tool runs the user's evaluation script in an isolated subprocess
+- Your role is to choose the right file and interpret the results
 
 ## Required Output Format
 
@@ -657,4 +721,6 @@ Evaluate the solution now.
 # Default value for loaded_skills parameter
 # ==============================================================================
 
-DEFAULT_LOADED_SKILLS = """No skills explicitly loaded, that means we don't use any skills in this task."""
+DEFAULT_LOADED_SKILLS = (
+    """No skills explicitly loaded, that means we don't use any skills in this task."""
+)

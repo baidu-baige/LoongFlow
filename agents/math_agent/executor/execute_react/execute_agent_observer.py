@@ -57,7 +57,7 @@ class ExecuteAgentObserver(DefaultObserver):
                     if rule["tool_name"] != tool_name:
                         continue
 
-                    trigger = rule["exception_out"]
+                    trigger = rule["exception_out"] if rule["exception_out"] else rule["trigger"]
 
                     for item in parsed:
                         s = json.dumps(item, ensure_ascii=False) if isinstance(item, (dict, list)) else str(item)

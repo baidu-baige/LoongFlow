@@ -14,6 +14,5 @@ class ClaudeAgentConfig:
     build_in_tools: Optional[List[str]] = None
     skills: Optional[List[str]] = None
     max_turns: Optional[int] = None
-    max_rounds: Optional[int] = None
     max_thinking_tokens: Optional[int] = None
     permission_mode: Optional[str] = "acceptEdits"

@@ -12,6 +12,7 @@ Uses multiprocessing for isolation and precise timeout control.
 """
 
 import asyncio
+import copy
 import importlib
 import json
 import multiprocessing
@@ -21,6 +22,7 @@ import traceback
 import uuid
 from typing import Any, override, Optional
 
+from agents.general_agent.utils import _prepare_solution_pack_context
 from loongflow.agentsdk.logger import get_logger
 from loongflow.agentsdk.message import Message, ContentElement
 from loongflow.framework.claude_code import (
@@ -67,6 +69,14 @@ class GeneralEvaluator(Evaluator):
                 f"Invalid config type: {type(config)}. Expected EvaluatorConfig, dict, or object with llm_config"
             )
 
+        llm_config = copy.deepcopy(self.config.llm_config)
+        if not llm_config.model.startswith("anthropic/"):
+            raise ValueError(
+                "Evaluator: Only support Anthropic model, please use model name like anthropic/xxx."
+            )
+        llm_config.model = llm_config.model.split("/")[-1]
+        self.config.llm_config = llm_config
+
         self._is_interrupted: bool = False
         self._current_agent = None
         self.work_dir: str = ""
@@ -101,28 +111,30 @@ class GeneralEvaluator(Evaluator):
 
             self.work_dir = work_dir
 
-            # Extract solution from message
-            solution = self._extract_solution(message)
+            # Extract solution directory from message
+            solution_dir = self._extract_solution(message)
 
             evaluation_mode = "Custom Tool" if self.config.evaluate_code else "AI Agent"
             logger.info(
-                f"[{context.trace_id}] Evaluator: ?? Starting {evaluation_mode} evaluation (solution_length={len(solution)})"
+                f"[{context.trace_id}] Evaluator: 🔍 Starting {evaluation_mode} evaluation for solution pack: {solution_dir}"
             )
 
             if self.config.evaluate_code:
                 # Custom Tool Mode: Run user's evaluation file in a subprocess
-                logger.debug(f"[{context.trace_id}] Evaluator: 🔧 Using custom evaluation file")
-                return await self._evaluate_with_custom_file(solution)
+                logger.debug(
+                    f"[{context.trace_id}] Evaluator: 🔧 Using custom evaluation file"
+                )
+                return await self._evaluate_with_custom_file(solution_dir)
             else:
                 # Self-Evaluation Mode: Use AI Agent to evaluate
-                logger.debug(f"[{context.trace_id}] Evaluator: 🤖 Using AI agent evaluation")
-                return await self._evaluate_with_ai_agent(solution)
+                logger.debug(
+                    f"[{context.trace_id}] Evaluator: 🤖 Using AI agent evaluation"
+                )
+                return await self._evaluate_with_ai_agent(solution_dir)
 
         except Exception as e:
             trace_id = context.trace_id if context else "unknown"
-            logger.error(
-                f"[{trace_id}] Evaluator: Evaluation failed - {str(e)}"
-            )
+            logger.error(f"[{trace_id}] Evaluator: Evaluation failed - {str(e)}")
             return EvaluationResult(
                 status=EvaluationStatus.FRAMEWORK_ERROR,
                 score=0.0,
@@ -154,14 +166,39 @@ class GeneralEvaluator(Evaluator):
             pass
 
     def _extract_solution(self, message: Message) -> str:
-        """Extract solution content from message."""
+        """
+        Extract solution directory path from message.
+
+        All solutions MUST be Solution Pack directories.
+
+        Returns:
+            Absolute path to solution directory
+        """
         elements = message.get_elements(ContentElement)
         if not elements:
             raise ValueError("No ContentElement found in message.")
 
         data = elements[0].data
-        return data
 
+        if not isinstance(data, str):
+            raise ValueError(
+                f"Solution must be a directory path string, got {type(data)}"
+            )
+
+        # Ensure absolute path
+        if not os.path.isabs(data):
+            data = os.path.abspath(data)
+
+        # Validate it's a directory
+        if not os.path.exists(data):
+            raise FileNotFoundError(f"Solution directory not found: {data}")
+        if not os.path.isdir(data):
+            raise ValueError(
+                f"Solution must be a directory (Solution Pack), got file: {data}"
+            )
+
+        logger.debug(f"Evaluator: Solution Pack directory: {data}")
+        return data
 
     def _load_skills(self, work_dir: str) -> None:
         """Load configured skills."""
@@ -170,7 +207,9 @@ class GeneralEvaluator(Evaluator):
                 from .utils import load_skills
 
                 load_skills(skill_names=self.config.agent["skills"], work_dir=work_dir)
-                logger.debug(f"Evaluator: Successfully loaded skills: {self.config.agent['skills']}")
+                logger.debug(
+                    f"Evaluator: Successfully loaded skills: {self.config.agent['skills']}"
+                )
             except Exception as e:
                 logger.warning(f"Evaluator: Failed to load skills - {e}")
 
@@ -181,6 +220,7 @@ class GeneralEvaluator(Evaluator):
             return DEFAULT_LOADED_SKILLS
 
         from .utils import format_loaded_skills
+
         return format_loaded_skills(skills, work_dir)
 
     def _parse_evaluation_result(self, result_message: Message) -> EvaluationResult:
@@ -212,7 +252,11 @@ class GeneralEvaluator(Evaluator):
 
             logger.debug(
                 "Evaluator parsed result",
-                extra={"score": score, "status": status.value, "feedback_length": len(feedback)}
+                extra={
+                    "score": score,
+                    "status": status.value,
+                    "feedback_length": len(feedback),
+                },
             )
 
             return EvaluationResult(
@@ -225,7 +269,10 @@ class GeneralEvaluator(Evaluator):
         except Exception as e:
             logger.error(
                 "Evaluator failed to parse result",
-                extra={"error": str(e), "result_message_type": type(result_message).__name__}
+                extra={
+                    "error": str(e),
+                    "result_message_type": type(result_message).__name__,
+                },
             )
             return EvaluationResult(
                 status=EvaluationStatus.FRAMEWORK_ERROR,
@@ -339,43 +386,52 @@ class GeneralEvaluator(Evaluator):
         # Parse evaluation result
         return self._parse_evaluation_result(result_message)
 
-    async def _evaluate_with_custom_file(self, solution: str) -> EvaluationResult:
+    async def _evaluate_with_custom_file(self, solution_dir: str) -> EvaluationResult:
         """
         Evaluate using user's evaluation file wrapped as an Agent tool.
 
         Args:
-            solution: The solution code or content to evaluate.
+            solution_dir: Absolute path to Solution Pack directory
 
         Returns:
             EvaluationResult with score, summary, metrics, and artifacts.
         """
         assert self.config.evaluate_code is not None
+
+        # Prepare Solution Pack context (same as AI mode for consistency)
+        solution_context = _prepare_solution_pack_context(solution_dir)
+
+        # Create evaluation tool that will pass solution_dir to user script
         eval_tool = _create_user_evaluation_tool(
             workspace_base=self.work_dir,
             evaluate_code=self.config.evaluate_code,
+            solution_dir=solution_dir,  # Pass directory path for tool to use
             timeout=self.config.timeout,
             active_processes=self._active_processes,
         )
 
         return await self._run_evaluation_agent(
-            solution=solution,
+            solution=solution_context,  # Show structure to agent
             system_prompt=GENERAL_EVALUATOR_TOOL_SYSTEM,
             user_prompt=GENERAL_EVALUATOR_TOOL_USER,
             custom_tools={"evaluate_solution": eval_tool},
         )
 
-    async def _evaluate_with_ai_agent(self, solution: str) -> EvaluationResult:
+    async def _evaluate_with_ai_agent(self, solution_dir: str) -> EvaluationResult:
         """
         Evaluate using AI Agent (self-evaluation mode).
 
         Args:
-            solution: The solution code or content to evaluate.
+            solution_dir: Absolute path to Solution Pack directory
 
         Returns:
             EvaluationResult with score and summary.
         """
+        # Prepare Solution Pack context for evaluation
+        solution_context = _prepare_solution_pack_context(solution_dir)
+
         return await self._run_evaluation_agent(
-            solution=solution,
+            solution=solution_context,
             system_prompt=GENERAL_EVALUATOR_SIMPLE_SYSTEM,
             user_prompt=GENERAL_EVALUATOR_SIMPLE_USER,
         )
@@ -384,6 +440,7 @@ class GeneralEvaluator(Evaluator):
 def _create_user_evaluation_tool(
     workspace_base: str,
     evaluate_code: str,
+    solution_dir: str,
     timeout: int = 300,
     active_processes: dict[str, multiprocessing.Process] | None = None,
 ) -> dict[str, Any]:
@@ -395,7 +452,8 @@ def _create_user_evaluation_tool(
 
     Args:
         workspace_base: The workspace base path
-        evaluate_code: Evaluation code to wrap.
+        evaluate_code: Evaluation code to wrap
+        solution_dir: Absolute path to solution directory (for validation)
         timeout: Maximum time in seconds for the evaluation
         active_processes: Dictionary to track active processes for interruption
 
@@ -406,14 +464,84 @@ def _create_user_evaluation_tool(
         active_processes = {}
 
     async def run_user_evaluation(args: dict[str, Any]) -> dict[str, Any]:
-        """Run the user's evaluation script on the provided solution."""
-        solution = args.get("solution", "")
+        """Run the user's evaluation script on the specified file."""
+        # Extract file path from agent's call
+        file_path = args.get("file_path", "")
 
-        # Run evaluation in subprocess
+        if not file_path:
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(
+                            {
+                                "status": "framework_error",
+                                "score": 0.0,
+                                "summary": "file_path parameter is required",
+                                "metrics": {},
+                                "artifacts": {},
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        ),
+                    }
+                ]
+            }
+
+        # Build absolute path if relative
+        if not os.path.isabs(file_path):
+            file_path = os.path.join(solution_dir, file_path)
+
+        # Validate file is within solution directory
+        file_path_abs = os.path.abspath(file_path)
+        solution_dir_abs = os.path.abspath(solution_dir)
+
+        if not file_path_abs.startswith(solution_dir_abs):
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(
+                            {
+                                "status": "framework_error",
+                                "score": 0.0,
+                                "summary": f"File path {file_path} is outside solution directory {solution_dir}",
+                                "metrics": {},
+                                "artifacts": {},
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        ),
+                    }
+                ]
+            }
+
+        # Validate file exists
+        if not os.path.exists(file_path_abs):
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(
+                            {
+                                "status": "framework_error",
+                                "score": 0.0,
+                                "summary": f"File not found: {file_path}",
+                                "metrics": {},
+                                "artifacts": {},
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        ),
+                    }
+                ]
+            }
+
+        # Run evaluation in subprocess with the specified file
         result = await _run_evaluation_in_subprocess(
             workspace_base=workspace_base,
             evaluate_code=evaluate_code,
-            solution=solution,
+            solution=file_path_abs,  # Pass file path to user script
             timeout=timeout,
             active_processes=active_processes,
         )
@@ -431,10 +559,12 @@ def _create_user_evaluation_tool(
     return {
         "function": run_user_evaluation,
         "description": (
-            "Run the user-provided evaluation script to evaluate a solution. "
+            "Run the user-provided evaluation script on a specific file from the solution pack. "
+            "You should analyze the solution pack structure, decide which file to evaluate "
+            "(typically the entrypoint specified in index.json), and pass its path to this tool. "
             "Returns a JSON object containing: score (0.0-1.0), summary, status, metrics, and artifacts."
         ),
-        "parameters": {"solution": str},
+        "parameters": {"file_path": str},  # Agent specifies which file to evaluate
     }
 
 
@@ -471,18 +601,21 @@ async def _run_evaluation_in_subprocess(
 
     process = None
     try:
-        # Save solution to a temp file
-        solution_filename = "solution.py"
-        solution_path = os.path.join(temp_dir, solution_filename)
-        with open(solution_path, "w", encoding="utf-8") as f:
-            f.write(solution)
+        # Validate solution file path exists
+        if not os.path.exists(solution):
+            raise FileNotFoundError(f"Solution file not found: {solution}")
+
+        solution_file_path = solution
+        logger.debug(
+            f"Evaluator: Passing solution file to evaluation script: {solution_file_path}"
+        )
 
         evaluation_file_path = os.path.join(temp_dir, "evaluator_code.py")
         with open(evaluation_file_path, "w", encoding="utf-8") as f:
             f.write(evaluate_code)
 
-        # Prepare process args
-        process_args = (evaluation_file_path, solution_path, result_file_path)
+        # Prepare process args - pass file path
+        process_args = (evaluation_file_path, solution_file_path, result_file_path)
 
         # Create and start process
         process = multiprocessing.Process(
@@ -572,9 +705,17 @@ def _run_evaluate_target(
     """
     Run user's evaluation function in a separate process and write result to file.
 
+    Supports two modes:
+    1. File mode: solution_path is a file -> pass to evaluate()
+    2. Directory mode: solution_path is a directory (Solution Pack) -> pass to evaluate()
+
+    The user's evaluate() function should handle both cases:
+    - If directory: read index.json to find entrypoint, or use convention
+    - If file: evaluate directly
+
     Args:
         evaluation_file_path: Path to the user's evaluation file
-        solution_path: Path to the solution file to evaluate
+        solution_path: Path to the solution (file or directory)
         result_file_path: Path to write evaluation result JSON file
 
     Returns:
@@ -608,7 +749,7 @@ def _run_evaluate_target(
 
         eval_func = getattr(eval_module, "evaluate")
 
-        # Call evaluate function
+        # Call evaluate function (supports both file and directory)
         eval_result = eval_func(solution_path)
 
         # Parse and normalize the result

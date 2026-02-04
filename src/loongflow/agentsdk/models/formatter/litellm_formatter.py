@@ -252,7 +252,7 @@ class LiteLLMFormatter(BaseFormatter):
                         "type": "function",
                         "function": {
                             "name": elem.target,
-                            "arguments": json.dumps(elem.arguments, ensure_ascii=False),
+                            "arguments": json.dumps(elem.arguments, ensure_ascii=False, indent=2),
                         },
                     }
                 )

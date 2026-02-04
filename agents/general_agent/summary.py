@@ -3,7 +3,7 @@
 """
 This file provides general planner implementation based on Claude Code Agent
 """
-
+import copy
 import json
 import os
 import time
@@ -13,7 +13,11 @@ from enum import Enum
 from typing import Any
 
 from agents.general_agent.common import ClaudeAgentConfig
-from agents.general_agent.utils import build_custom_tools_from_function_tools, format_loaded_skills
+from agents.general_agent.utils import (
+    build_custom_tools_from_function_tools,
+    format_loaded_skills,
+    _prepare_solution_pack_context,
+)
 from loongflow.agentsdk.logger import get_logger
 from loongflow.agentsdk.memory.evolution import Solution
 from loongflow.agentsdk.message import Message, MimeType, ContentElement
@@ -68,6 +72,14 @@ class GeneralSummaryAgent(Worker):
                 "Planner: No LLMConfig found in config, please check your config."
             )
 
+        llm_config = copy.deepcopy(self.config.llm_config)
+        if not llm_config.model.startswith("anthropic/"):
+            raise ValueError(
+                "Summary: Only support Anthropic model, please use model name like anthropic/xxx."
+            )
+        llm_config.model = llm_config.model.split("/")[-1]
+        self.config.llm_config = llm_config
+
         self.db = db
 
         self.custom_tools = [
@@ -77,6 +89,7 @@ class GeneralSummaryAgent(Worker):
         ]
 
         logger.debug("Summary: Core tools registered successfully")
+
     async def run(self, context: Context, message: Message) -> Message:
         """Execute summary phase."""
         logger.info(
@@ -88,13 +101,15 @@ class GeneralSummaryAgent(Worker):
         analysis_str = await self._reflect(context, evidence, assessment)
         analysis = json.loads(analysis_str)
         await self._record(context, evidence, analysis.get("reflection", ""))
-        
+
         score = evidence.current_solution.score if evidence else 0.0
-        total_tokens = analysis.get("total_prompt_tokens", 0) + analysis.get("total_completion_tokens", 0)
+        total_tokens = analysis.get("total_prompt_tokens", 0) + analysis.get(
+            "total_completion_tokens", 0
+        )
         logger.info(
             f"[{context.trace_id}] Summary: ✅ Iteration completed - score={score:.4f}, tokens={total_tokens}"
         )
-        
+
         return Message.from_elements(
             [
                 ContentElement(
@@ -125,55 +140,75 @@ class GeneralSummaryAgent(Worker):
         except Exception:
             plan_content = ""
 
-        paths = {
-            "best_solution": data.get("best_solution_file_path"),
-            "best_evaluation": data.get("best_evaluation_file_path"),
-            "parent_info": data.get("parent_info_file_path"),
-        }
+        # Extract paths from Executor's message
+        # Note: Executor now returns best_solution_path (directory), not best_solution_file_path
+        best_solution_path = data.get("best_solution_path")
+        best_evaluation_path = data.get("best_evaluation_path", {})
+        parent_info_path = data.get("parent_info_file_path")
 
-        for name, path in paths.items():
-            if not path or not os.path.exists(path):
-                raise FileNotFoundError(f"file {name} path {path} not found")
+        # Validate paths
+        if not best_solution_path or not os.path.exists(best_solution_path):
+            raise FileNotFoundError(f"Solution path not found: {best_solution_path}")
+        if not best_evaluation_path or not os.path.exists(best_evaluation_path):
+            raise FileNotFoundError(
+                f"Evaluation path not found: {best_evaluation_path}"
+            )
+        if not os.path.isdir(best_solution_path):
+            raise ValueError(f"Solution path must be a directory: {best_solution_path}")
+        if not parent_info_path or not os.path.exists(parent_info_path):
+            raise FileNotFoundError(f"Parent info path not found: {parent_info_path}")
+
+        # Ensure absolute path
+        if not os.path.isabs(best_solution_path):
+            best_solution_path = os.path.abspath(best_solution_path)
 
         logger.debug(
-            f"[{context.trace_id}] Summary: Evidence gathered from disk successfully"
+            f"[{context.trace_id}] Summary: Evidence gathered - solution_pack={best_solution_path}"
         )
 
+        # Load parent info
         try:
-            with open(paths["best_solution"], "r", encoding="utf-8") as f:
-                solution_content = f.read()
-            with open(paths["best_evaluation"], "r", encoding="utf-8") as f:
-                evaluation_data = json.load(f)
-            with open(paths["parent_info"], "r", encoding="utf-8") as f:
+            with open(parent_info_path, "r", encoding="utf-8") as f:
                 parent_info_data = json.load(f)
-        except FileNotFoundError as e:
-            raise e
-        except json.JSONDecodeError as e:
-            raise ValueError(f"parse json error: {e.msg}")
-        except IOError as e:
-            raise IOError(f"read file error: {e.filename} - {e.strerror}")
         except Exception as e:
-            raise RuntimeError(f"file error: {e}")
+            raise RuntimeError(f"Failed to read parent info: {e}")
+
+        # Load evaluation info
+        try:
+            with open(best_evaluation_path, "r", encoding="utf-8") as f:
+                best_evaluation_data = json.load(f)
+        except Exception as e:
+            raise RuntimeError(f"Failed to read evaluation info: {e}")
+
+        # Filter out fields that are not part of Solution class
+        # (e.g., solution_path which is added by Planner for Executor's use)
+        from dataclasses import fields
+
+        valid_fields = {f.name for f in fields(Solution)}
+        filtered_data = {k: v for k, v in parent_info_data.items() if k in valid_fields}
 
         # parent_info is not enough in file, we need to read it from db
-        parent_info = Solution(
-            **parent_info_data,
-        )
+        parent_info = Solution(**filtered_data)
+
         if solution_id := parent_info_data.get("solution_id", None):
             solutions = self.db.get_solutions([solution_id])
             if solutions and len(solutions) == 1:
                 parent_info = Solution.from_dict(solutions[0])
 
+        # Create new solution with directory path (not file content)
         solution_id = uuid.uuid4().hex[:8]
         trace_list = parent_info.metadata.get("trace", []).copy()
         trace_list.append(solution_id)
-        metadata = {"trace": trace_list}
+        metadata = {
+            "trace": trace_list,
+            "solution_pack": _prepare_solution_pack_context(best_solution_path),
+        }
 
         return Evidence(
-            best_evaluation=evaluation_data,
+            best_evaluation=best_evaluation_data,
             parent_info=parent_info,
             current_solution=Solution(
-                solution=solution_content,
+                solution=best_solution_path,  # Store directory path, not content
                 solution_id=solution_id,
                 generate_plan=plan_content,
                 parent_id=parent_info.solution_id,
@@ -181,8 +216,8 @@ class GeneralSummaryAgent(Worker):
                 iteration=context.current_iteration,
                 timestamp=time.time(),
                 generation=len(trace_list),
-                score=evaluation_data.get("score", 0),
-                evaluation=json.dumps(evaluation_data, ensure_ascii=False),
+                score=best_evaluation_data.get("score", 0),
+                evaluation=json.dumps(best_evaluation_data, ensure_ascii=False, indent=2),
                 metadata=metadata,
             ),
         )
@@ -201,11 +236,11 @@ class GeneralSummaryAgent(Worker):
             assessment_result = Assessment.REGRESSION
         else:
             assessment_result = Assessment.STALE
-            
+
         logger.debug(
             f"[{context.trace_id}] Summary: Assessment result - {assessment_result.value}"
         )
-        
+
         return assessment_result
 
     async def _reflect(
@@ -220,9 +255,7 @@ class GeneralSummaryAgent(Worker):
         # Ensure work_dir is absolute path
         if not os.path.isabs(work_dir):
             work_dir = os.path.abspath(work_dir)
-        logger.debug(
-            f"[{context.trace_id}] Summary: Workspace: {work_dir}"
-        )
+        logger.debug(f"[{context.trace_id}] Summary: Workspace: {work_dir}")
 
         # Load skills if specified
         if self.config.skills:
@@ -312,9 +345,7 @@ class GeneralSummaryAgent(Worker):
             Workspace.write_summarizer_best_summary(
                 context, plan_content, BEST_SUMMARY_FILE
             )
-            logger.info(
-                f"[{context.trace_id}] Summary: ✅ Summary extracted and saved"
-            )
+            logger.info(f"[{context.trace_id}] Summary: ✅ Summary extracted and saved")
 
         reflection = ""
         with open(best_summary_path_for_claude, "r") as f:
@@ -325,7 +356,7 @@ class GeneralSummaryAgent(Worker):
             "total_prompt_tokens": result.metadata.get("input_tokens", 0),
             "total_completion_tokens": result.metadata.get("output_tokens", 0),
         }
-        return json.dumps(final_result, ensure_ascii=False)
+        return json.dumps(final_result, ensure_ascii=False, indent=2)
 
     async def _record(
         self, context: Context, evidence: Evidence, reflection: str
@@ -359,9 +390,7 @@ class GeneralSummaryAgent(Worker):
                 evidence.parent_info.solution_id,
                 sample_cnt=evidence.parent_info.sample_cnt + 1,
             )
-            logger.debug(
-                f"[{context.trace_id}] Summary: Parent solution updated"
-            )
+            logger.debug(f"[{context.trace_id}] Summary: Parent solution updated")
 
         evidence.current_solution.summary = reflection
         evidence.current_solution.sample_weight = child_weight

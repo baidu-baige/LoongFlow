@@ -158,7 +158,7 @@ class EvolveExecuteAgentReact(Worker):
             # Write round-level history (append all candidate entries found this round)
             history.add_round(round_idx, [r.to_dict() for r in round_results])
             Workspace.write_executor_history(
-                context, json.dumps(history.to_list(), indent=2)
+                context, json.dumps(history.to_list(), ensure_ascii=False, indent=2)
             )
 
             if not round_results:

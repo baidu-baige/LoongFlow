@@ -246,5 +246,5 @@ if __name__ == "__main__":
     else:
         print(f"--- Evaluating {program_file} ({N_EVAL_RUNS} runs) ---")
         report = evaluate(program_file)
-        print(json.dumps(report, indent=2))
+        print(json.dumps(report, ensure_ascii=False, indent=2))
         print(f"\nFinal Mean Score: {report.get('score', 0.0):.4f}")

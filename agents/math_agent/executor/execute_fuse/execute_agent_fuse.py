@@ -184,7 +184,7 @@ class EvolveExecuteAgentFuse(Worker):
             # Write round-level history (append all candidate entries found this round)
             history.add_round(round_idx, [r.to_dict() for r in round_results])
             Workspace.write_executor_history(
-                context, json.dumps(history.to_list(), indent=2)
+                context, json.dumps(history.to_list(), ensure_ascii=False, indent=2)
             )
 
             if not round_results:
@@ -374,14 +374,14 @@ class EvolveExecuteAgentFuse(Worker):
                     f"Trace ID: {context.trace_id}, Executor Fuse: ToolOutputException: {error_msg}"
                 )
                 result = {"content": error_msg}
-                return json.dumps(result, ensure_ascii=False)
+                return json.dumps(result, ensure_ascii=False, indent=2)
             except Exception as e:
                 error_msg = f"react_agent.run failed: {e}"
                 logger.exception(
                     f"Trace ID: {context.trace_id}: Executor Fuse: {error_msg}"
                 )
                 result = {"content": error_msg}
-                return json.dumps(result, ensure_ascii=False)
+                return json.dumps(result, ensure_ascii=False, indent=2)
 
         else:  # Else use Chat Mode for faster generation
             total_completion_tokens = 0
@@ -432,7 +432,7 @@ class EvolveExecuteAgentFuse(Worker):
                         f"Trace ID: {context.trace_id}: Executor Fuse: {resp.error_message}"
                     )
                     result = {"content": resp.error_message}
-                    return json.dumps(result, ensure_ascii=False)
+                    return json.dumps(result, ensure_ascii=False, indent=2)
             finally:
                 async for _ in resp_generator:
                     pass
@@ -447,7 +447,7 @@ class EvolveExecuteAgentFuse(Worker):
                     f"Trace ID: {context.trace_id}: Executor Fuse: Empty code from LLM: {resp}"
                 )
                 result = {"content": resp}
-                return json.dumps(result, ensure_ascii=False)
+                return json.dumps(result, ensure_ascii=False, indent=2)
 
             logger.info(
                 f"Trace ID: {context.trace_id}: Executor Fuse: candidate (round={round_idx}, "
@@ -471,7 +471,7 @@ class EvolveExecuteAgentFuse(Worker):
                     f"Trace ID: {context.trace_id}: Executor Fuse: Failed to get evaluation result: {evaluation_result}"
                 )
                 result = {"content": evaluation_result}
-                return json.dumps(result, ensure_ascii=False)
+                return json.dumps(result, ensure_ascii=False, indent=2)
 
             logger.info(
                 f"Trace ID: {context.trace_id}: Executor Fuse: Candidate (round={round_idx}, idx={candidate_idx}), "
@@ -497,12 +497,12 @@ class EvolveExecuteAgentFuse(Worker):
             )
 
             result = {
-                "content": json.dumps(evaluation_result.to_dict()),
+                "content": json.dumps(evaluation_result.to_dict(), ensure_ascii=False, indent=2),
                 "total_completion_tokens": total_completion_tokens,
                 "total_prompt_tokens": total_prompt_tokens,
             }
 
-            return json.dumps(result, ensure_ascii=False)
+            return json.dumps(result, ensure_ascii=False, indent=2)
 
     def _init_model(self) -> BaseLLMModel:
         """Initialize or reuse the LLM model."""
@@ -535,7 +535,7 @@ class EvolveExecuteAgentFuse(Worker):
         return ExecutionContext(
             parent_info_file_path=parent_info_path,
             parent_core=float(parent_data.get("score", 0.0)),
-            parent_solution=json.dumps(parent_data),
+            parent_solution=json.dumps(parent_data, ensure_ascii=False, indent=2),
             stage1_plan=stage1_plan,
             stage1_plan_file_path=plan_path,
         )
@@ -553,13 +553,13 @@ class EvolveExecuteAgentFuse(Worker):
                     "total_completion_tokens", 0
                 ),
             }
-            return json.dumps(result, ensure_ascii=False)
+            return json.dumps(result, ensure_ascii=False, indent=2)
 
         result = {
             "content": f"parse llm ContentElement failed, "
-            + f"result_msg:{json.dumps(result_msg.to_dict(), ensure_ascii=False)}",
+            + f"result_msg:{json.dumps(result_msg.to_dict(), ensure_ascii=False, indent=2)}",
         }
-        return json.dumps(result, ensure_ascii=False)
+        return json.dumps(result, ensure_ascii=False, indent=2)
 
     def load_results_for_candidate(
         self,
@@ -650,7 +650,7 @@ class EvolveExecuteAgentFuse(Worker):
                 solution_file_path=s_path,
                 evaluation_file_path=e_path,
                 score=score,
-                reason=json.dumps(eval_data),
+                reason=json.dumps(eval_data, ensure_ascii=False, indent=2),
                 source="disk",
             )
             results.append(cr)

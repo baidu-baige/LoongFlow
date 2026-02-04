@@ -195,7 +195,7 @@ class ClaudeCodeAgent(AgentBase):
 
         if mcp_servers:
             options_kwargs["mcp_servers"] = mcp_servers
-        
+
         if max_turns:
             options_kwargs["max_turns"] = max_turns
 
@@ -360,14 +360,14 @@ class ClaudeCodeAgent(AgentBase):
         duration_ms = None
 
         # Consolidated initialization log with structured data
-        self.logger.info(f"[Claude Agent] 🚀 Starting query", extra={
-            "model": self.model,
-            "work_dir": self.work_dir,
-            "permission_mode": self.permission_mode,
-            "query_length": len(input_query),
-            "query_preview": input_query[:100] + "..." if len(input_query) > 100 else input_query,
-            "tool_count": len(self.tool_list) + len(self.custom_tools)
-        })
+        self.logger.info(
+            f"[Claude Agent] 🚀 Starting query, model: {self.model}, "
+            f"work_dir: {self.work_dir}, "
+            f"permission_mode: {self.permission_mode}, "
+            f"query_length: {len(input_query)}, "
+            f"query_preview: {input_query[:100] + '...' if len(input_query) > 100 else input_query}, "
+            f"tool_count: {len(self.tool_list) + len(self.custom_tools)}"
+        )
 
         try:
             # Use ClaudeSDKClient for better connection management
@@ -382,8 +382,10 @@ class ClaudeCodeAgent(AgentBase):
                 message_count = 0
                 async for message in client.receive_messages():
                     message_count += 1
-                    self.logger.debug(f"[Claude Agent] Received message #{message_count}: {type(message).__name__}")
-                    
+                    self.logger.debug(
+                        f"[Claude Agent] Received message #{message_count}: {type(message).__name__}"
+                    )
+
                     # Process assistant messages (Claude's reasoning and text output)
                     if isinstance(message, AssistantMessage):
                         for block in message.content:
@@ -394,7 +396,9 @@ class ClaudeCodeAgent(AgentBase):
                             elif hasattr(block, "name"):
                                 tool_info = f"Tool: {block.name}"
                                 tool_calls.append(tool_info)
-                                self.logger.info(f"[Claude Tool]: {block.name}, args={block.input}")
+                                self.logger.info(
+                                    f"[Claude Tool]: {block.name}, args={block.input}"
+                                )
 
                     # Process result messages (final status and usage)
                     elif isinstance(message, ResultMessage):
@@ -405,7 +409,9 @@ class ClaudeCodeAgent(AgentBase):
                         if hasattr(message, "usage") and message.usage:
                             input_tokens = message.usage.get("input_tokens", 0)
                             output_tokens = message.usage.get("output_tokens", 0)
-                            self.logger.info(f"[Claude Usage]: input_tokens={input_tokens}, output_tokens={output_tokens}")
+                            self.logger.info(
+                                f"[Claude Usage]: input_tokens={input_tokens}, output_tokens={output_tokens}"
+                            )
 
                         if hasattr(message, "duration_ms"):
                             duration_ms = message.duration_ms
@@ -418,14 +424,19 @@ class ClaudeCodeAgent(AgentBase):
             error_messages = []
             for exc in eg.exceptions:
                 error_messages.append(f"{type(exc).__name__}: {str(exc)}")
-                self.logger.error(f"[Claude SubError]: {type(exc).__name__}: {str(exc)}")
-            self.logger.error(f"[Claude Error]: TaskGroup failed with {len(eg.exceptions)} sub-exceptions")
+                self.logger.error(
+                    f"[Claude SubError]: {type(exc).__name__}: {str(exc)}"
+                )
+            self.logger.error(
+                f"[Claude Error]: TaskGroup failed with {len(eg.exceptions)} sub-exceptions"
+            )
             final_status = "error"
             full_response.append(f"Error occurred: {'; '.join(error_messages)}")
         except Exception as e:
             self.logger.error(f"[Claude Error]: {type(e).__name__}: {str(e)}")
             # Log more details for debugging
             import traceback
+
             self.logger.debug(f"[Claude Traceback]: {traceback.format_exc()}")
             final_status = "error"
             full_response.append(f"Error occurred: {str(e)}")

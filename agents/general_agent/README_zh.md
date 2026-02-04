@@ -15,24 +15,16 @@ source .venv/bin/activate
 
 # 安装依赖
 uv pip install -e .
-
-# 安装Claude Code（下列方式3选1）：
-# 对于maxOS/Linux/WSL
-curl -fsSL https://claude.ai/install.sh | bash
-
-# 对于Homebrew
-brew install --cask claude-code
-
-# 对于WinGet
-winget install Anthropic.ClaudeCode
 ```
 
 ### 2. 配置 API 密钥 和 URL
 
+当前，General Agent仅支持Anthropic模型。您可以通过设置环境变量来配置API密钥和URL，或在配置文件的`llm_config`部分填写信息。
+
 ```bash
 # 设置 OpenAI 或 Litellm兼容的 API 密钥 和 URL
-export OPENAI_API_KEY="your-api-key-here"
-export OPENAI_BASE_URL="https://api.deepseek.com/v1"
+export ANTHROPIC_API_KEY="your-api-key-here"
+export ANTHROPIC_BASE_URL="https://api.deepseek.com/v1"
 ```
 
 ### 3. 运行示例任务
@@ -78,9 +70,8 @@ workspace_path: "./output-task-name"
 
 # llm_config: LLM 配置
 llm_config:
-  model: "gpt-4o-mini"              # 或 "deepseek-v3.2"
-  model_provider: "openai"          # （可选）模型提供方：根据model自动判断，默认openai
-  url: "https://api.openai.com/v1"  # （可选）如果配置会优先使用，否则读取环境变量
+  model: "anthropic/deepseek-v3.2"  #  模型协议/模型名称
+  url: "https://api.anthropic.com"  # （可选）如果配置会优先使用，否则读取环境变量
   api_key: "xxx"                    # （可选）如果配置会优先使用，否则读取环境变量
 
 # evolve: 进化流程配置
@@ -109,7 +100,6 @@ executors:
     skills: ["code_generation", "testing"]
     max_turns: 20
     permission_mode: "acceptEdits"
-    max_rounds: 1                           # 重试次数，仅executor目前有作用
 
 # summarizers: 总结器配置
 summarizers:
@@ -209,7 +199,7 @@ mkdir my_custom_task
 cat > my_custom_task/task_config.yaml << 'EOF'
 workspace_path: "./output-my-task"
 llm_config:
-  model: "gpt-4o-mini"
+  model: "anthropic/deepseek-v3.2"
 
 planners:
   general_planner:
@@ -218,7 +208,7 @@ planners:
 
 executors:
   general_executor:
-    max_rounds: 1
+    skills: ["skill-creator"]
 
 summarizers:
   general_summarizer:
@@ -251,9 +241,8 @@ cd LoongFlow
 ## 🔧 高级配置选项
 
 ### 权限模式
-- `"prompt"`：每次操作前询问确认
+- `"default"`：标准权限模式
 - `"acceptEdits"`：自动批准文件编辑（推荐）
-- `"acceptAll"`：自动批准所有操作
 
 ### 内置工具
 ```yaml
@@ -265,9 +254,6 @@ build_in_tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "Skill", "Task
 general_planner:
   max_turns: 15                    # 增加轮次提高规划质量
   max_thinking_tokens: 2000        # 控制思考令牌数
-
-general_executor:  
-  max_rounds: 3                    # 增加执行轮次
 ```
 
 ---

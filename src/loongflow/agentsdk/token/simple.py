@@ -31,4 +31,4 @@ class SimpleTokenCounter(TokenCounter):
         return len(json.dumps({
             "role": message.role,
             "content": [elem.get_content() for elem in message.content],
-        }, ensure_ascii=False)) // 4
+        }, ensure_ascii=False, indent=2)) // 4

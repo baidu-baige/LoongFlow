@@ -194,7 +194,7 @@ class EvolveSummaryAgent(Worker):
                 timestamp=time.time(),
                 generation=len(trace_list),
                 score=evaluation_data.get("score", 0),
-                evaluation=json.dumps(evaluation_data, ensure_ascii=False),
+                evaluation=json.dumps(evaluation_data, ensure_ascii=False, indent=2),
                 metadata=metadata,
             ),
         )
@@ -257,7 +257,7 @@ class EvolveSummaryAgent(Worker):
                 "total_completion_tokens", 0
             ),
         }
-        return json.dumps(final_result, ensure_ascii=False)
+        return json.dumps(final_result, ensure_ascii=False, indent=2)
 
     async def _record(
         self, context: Context, evidence: Evidence, reflection: str

@@ -3,13 +3,17 @@
 """
 This file provides general planner implementation based on Claude Code Agent
 """
-
+import copy
 import json
 import os
 from typing import Any
 
 from agents.general_agent.common import ClaudeAgentConfig
-from agents.general_agent.utils import build_custom_tools_from_function_tools, format_loaded_skills
+from agents.general_agent.utils import (
+    build_custom_tools_from_function_tools,
+    format_loaded_skills,
+    _prepare_solution_pack_context,
+)
 from loongflow.agentsdk.logger import get_logger
 from loongflow.agentsdk.message import Message, MimeType, ContentElement
 from loongflow.framework.claude_code import GENERAL_PLANNER_USER, GENERAL_PLANNER_SYSTEM
@@ -29,6 +33,7 @@ logger = get_logger(__name__)
 
 BEST_PLAN_FILE = "best_plan.md"
 
+
 class GeneralPlanAgent(Worker):
     """Plan Agent Class"""
 
@@ -45,6 +50,14 @@ class GeneralPlanAgent(Worker):
                 "Planner: No LLMConfig found in config, please check your config."
             )
 
+        llm_config = copy.deepcopy(self.config.llm_config)
+        if not llm_config.model.startswith("anthropic/"):
+            raise ValueError(
+                "Planner: Only support Anthropic model, please use model name like anthropic/xxx."
+            )
+        llm_config.model = llm_config.model.split("/")[-1]
+        self.config.llm_config = llm_config
+
         self.database = db
 
         self.custom_tools = [
@@ -56,6 +69,73 @@ class GeneralPlanAgent(Worker):
         ]
 
         logger.debug("Planner: Core tools registered successfully")
+
+    def _process_parent_solution(self, parent_dict: dict, context: Context) -> dict:
+        """
+        Process parent solution to support multi-file solution packs.
+
+        All solutions MUST be directories (solution packs). This method loads the
+        solution context (tree + manifest) and formats it for the agent.
+
+        Args:
+            parent_dict: Parent solution dictionary from database
+            context: Current execution context
+
+        Returns:
+            Modified parent_dict with formatted solution content
+        """
+        solution_path = parent_dict.get("solution", "")
+
+        if "metadata" not in parent_dict:
+            parent_dict["metadata"] = {}
+
+        # Ensure absolute path
+        if solution_path and not os.path.isabs(solution_path):
+            solution_path = os.path.abspath(solution_path)
+            parent_dict["solution"] = solution_path
+            logger.debug(
+                f"[{context.trace_id}] Planner: Converted solution path to absolute: {solution_path}"
+            )
+
+        # All solutions must be directories (solution packs)
+        if not solution_path or not os.path.exists(solution_path):
+            logger.warning(
+                f"[{context.trace_id}] Planner: No valid solution path found or path does not exist: {solution_path}"
+            )
+            parent_dict["solution"] = "No prior solution available."
+            parent_dict["metadata"]["solution_pack"] = ""
+            return parent_dict
+
+        if not os.path.isdir(solution_path):
+            raise ValueError(
+                f"Solution path must be a directory (solution pack), got file: {solution_path}. "
+                "All solutions in general_agent must follow the Solution Pack protocol."
+            )
+
+        try:
+            logger.debug(
+                f"[{context.trace_id}] Planner: Loading solution pack from {solution_path}"
+            )
+
+            # Load solution context (lazy loading: only tree + manifest)
+            formatted_solution = _prepare_solution_pack_context(solution_path)
+
+            # Replace solution content with formatted view
+            parent_dict["solution"] = solution_path
+            parent_dict["metadata"]["solution_pack"] = formatted_solution
+
+            logger.info(f"[{context.trace_id}] Planner: Loaded solution pack ")
+
+        except Exception as e:
+            logger.error(
+                f"[{context.trace_id}] Planner: Failed to load solution pack: {e}"
+            )
+            raise ValueError(
+                f"Failed to load solution pack from {solution_path}: {e}. "
+                "Ensure the directory contains a valid index.json manifest."
+            )
+
+        return parent_dict
 
     async def run(self, context: Context, message: Message) -> Message:
         """Execute planning phase."""
@@ -120,8 +200,11 @@ class GeneralPlanAgent(Worker):
         parent = self.database.sample_solution(context.island_id)
         parent_dict = parent if parent else init_parent
 
+        # Process parent solution for multi-file support
+        parent_dict = self._process_parent_solution(parent_dict, context)
+
         # Save parent info using Workspace
-        parent_json = json.dumps(parent_dict, indent=4)
+        parent_json = json.dumps(parent_dict, ensure_ascii=False, indent=2)
         Workspace.write_planner_parent_info(context, parent_json)
         parent_info_path = Workspace.get_planner_parent_info_path(context)
         logger.debug(
@@ -130,7 +213,9 @@ class GeneralPlanAgent(Worker):
 
         # Get the expected plan path
         # Use absolute path to avoid any relative path confusion
-        best_plan_full_path = str(Workspace.get_planner_best_plan_path(context, BEST_PLAN_FILE))
+        best_plan_full_path = str(
+            Workspace.get_planner_best_plan_path(context, BEST_PLAN_FILE)
+        )
         # Pass absolute path to Claude - Claude agent will handle it correctly regardless of current working directory
         best_plan_path_for_claude = best_plan_full_path  # Already the correct absolute path since Workspace returns absolute paths
 
@@ -161,7 +246,11 @@ class GeneralPlanAgent(Worker):
                 f"[{context.trace_id}] Planner: ⚠️ Plan file not found, extracting from response"
             )
             # Extract the plan content from Claude's response
-            if result.content and len(result.content) > 0 and isinstance(result.content[0], ContentElement):
+            if (
+                result.content
+                and len(result.content) > 0
+                and isinstance(result.content[0], ContentElement)
+            ):
                 plan_content = result.content[0].data
             else:
                 plan_content = str(result.metadata.get("response", "No plan generated"))
@@ -185,15 +274,15 @@ class GeneralPlanAgent(Worker):
         # Save metadata to meta.json in planner directory
         meta_file_path = os.path.join(work_dir, "meta.json")
         with open(meta_file_path, "w", encoding="utf-8") as f:
-            json.dump(meta_content, f, indent=2, ensure_ascii=False)
+            json.dump(meta_content, f, ensure_ascii=False, indent=2)
 
         logger.debug(
             "Planner: metadata saved",
             extra={
                 "trace_id": context.trace_id,
-                "input_tokens": result.metadata.get('input_tokens'),
-                "output_tokens": result.metadata.get('output_tokens')
-            }
+                "input_tokens": result.metadata.get("input_tokens"),
+                "output_tokens": result.metadata.get("output_tokens"),
+            },
         )
 
         return Message.from_text(

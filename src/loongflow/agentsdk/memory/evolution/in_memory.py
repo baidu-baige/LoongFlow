@@ -335,7 +335,7 @@ class InMemory(EvolveMemory):
             solution_dict = solution.to_dict()
             solution_path = os.path.join(solutions_path, f"{solution.solution_id}.json")
             with open(solution_path, "w") as f:
-                json.dump(solution_dict, f, indent=4)
+                json.dump(solution_dict, f, ensure_ascii=False, indent=2)
 
         # Save metadata
         metadata = {
@@ -354,7 +354,7 @@ class InMemory(EvolveMemory):
         }
 
         with open(os.path.join(checkpoint_path, "metadata.json"), "w") as f:
-            json.dump(metadata, f, indent=4)
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
 
         logger.info(
             f"Saved checkpoint with {len(self.populations)} programs to {checkpoint_path}"
@@ -370,7 +370,7 @@ class InMemory(EvolveMemory):
         if best_solution:
             best_solution_path = os.path.join(checkpoint_path, "best_solution.json")
             with open(best_solution_path, "w") as f:
-                json.dump(best_solution.to_dict(), f, indent=4)
+                json.dump(best_solution.to_dict(), f, ensure_ascii=False, indent=2)
 
         logger.info(f"Saved checkpoint with tag {tag} to {checkpoint_path}")
 
@@ -780,7 +780,7 @@ class InMemory(EvolveMemory):
                         self.elites.add(solution.solution_id)
 
             island_feature_map[feature_key] = solution.solution_id
-        return json.dumps(feature_coords)
+        return json.dumps(feature_coords, ensure_ascii=False)
 
     def _update_island(self, solution: Solution) -> None:
         """
