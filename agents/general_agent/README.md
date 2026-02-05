@@ -270,6 +270,15 @@ general_planner:
 3. **Permission Errors**:
    - Set `permission_mode: "acceptEdits"` to avoid frequent confirmations
 
+4. **Where is the Result**:
+   - The result will be saved at `{workspace_path}/task_id/iteration_id` sub-directory
+   - Each iteration sub-directory include 4 sub-directories: `planner`, `executor`, `evaluator`, and `summary`
+
+5. **Solution Explanation**:
+   - Now General_agent will generate multi-files in each iteration, we put all generation files in `executor/work_dir` sub-directory
+   - The Evaluator will evaluate the whole `work_dir` as a single evaluation task, and give a final evaluation result for the whole `work_dir`
+   - The solution field of the Solution class is set to the absolute path of `executor/work_dir` in each iteration, and you can check the generated files in that absolute path.
+
 ### Log Level Control
 ```bash
 # Different verbosity levels

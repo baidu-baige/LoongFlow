@@ -273,6 +273,15 @@ general_planner:
 3. **权限错误**：
    - 设置 `permission_mode: "acceptEdits"` 避免频繁确认
 
+4. **结果在哪**:
+   - 最终结果会保存在 `{workspace_path}/task_id/iteration_id` 子目录下
+   - 每个迭代子目录包含 4 个子目录: `planner`, `executor`, `evaluator`, 和 `summary`
+
+5. **结果解释**：
+    - 现在 General_agent 会生成多文件结果，在每个轮次中，我们会将所有生成文件放在 `executor/work_dir` 子目录下
+    - 评估器会将整个 `executor` 目录作为一个整体评估任务，给出该目录的最终评估结果
+    - 每个迭代的 `solution` 字段都会设置为该迭代 `executor/work_dir` 目录的绝对路径，你可以在那个绝对路径下查看生成的文件。
+
 ### 日志级别控制
 ```bash
 # 不同详细程度的日志
