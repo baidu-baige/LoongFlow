@@ -154,7 +154,7 @@ Entrypoint heuristics:
 {file_tree}
 ```
 
-Start generating the manifest"""
+The manifest is: """
 
         # Call LLM
         try:
@@ -259,9 +259,10 @@ Start generating the manifest"""
             url=self.llm_config.get("url"),
             work_dir="/tmp",  # Dummy work dir
             tool_list=[],  # No tools needed
+            disallowed_tools=["Read"],
             custom_tools={},
             system_prompt=self.SYSTEM_PROMPT,
-            max_turns=1,  # Single turn
+            max_turns=10,  # Single turn
         )
 
         result = await agent.run(user_prompt)

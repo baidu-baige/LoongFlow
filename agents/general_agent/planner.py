@@ -3,6 +3,7 @@
 """
 This file provides general planner implementation based on Claude Code Agent
 """
+
 import copy
 import json
 import os
@@ -180,6 +181,7 @@ class GeneralPlanAgent(Worker):
             url=self.config.llm_config.url,
             work_dir=work_dir,
             tool_list=self.config.build_in_tools,
+            disallowed_tools=self.config.disallowed_tools,
             custom_tools=database_tools,
             system_prompt=self.config.system_prompt or GENERAL_PLANNER_SYSTEM,
             permission_mode=self.config.permission_mode or "acceptEdits",

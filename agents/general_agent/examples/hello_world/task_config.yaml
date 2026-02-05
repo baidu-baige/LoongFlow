@@ -13,9 +13,9 @@ llm_config:
 # All available Configuration for Planner
 planners:
   general_planner:
-    # Planner's specific configuration, such as prompt templates, used LLM, etc.
-    # system_prompt: xxx
-    # build_in_tools: ["Skill", "Read", "Write", "Bash"]
+#    system_prompt: xxx
+#    build_in_tools: ["Skill", "Read", "Write", "Bash"]
+#    disallowed_tools: ["Read"]
     skills: ["skill-creator"]
     permission_mode: "acceptEdits"
     max_turns: 50
@@ -24,8 +24,9 @@ planners:
 # All available Executor configuration
 executors:
   general_executor:
-    # system_prompt: xxx
-    # build_in_tools: ["Skill", "Read", "Write", "Bash"]
+#    system_prompt: xxx
+#    build_in_tools: ["Skill", "Read", "Write", "Bash"]
+#    disallowed_tools: ["Read"]
     skills: ["skill-creator"]
     permission_mode: "acceptEdits"
     max_turns: 50
@@ -34,9 +35,9 @@ executors:
 # All available Summarizer configuration
 summarizers:
   general_summarizer:
-    # Summarizer's specific configuration
-    # system_prompt: xxx
-    # build_in_tools: ["Skill", "Read", "Write", "Bash"]
+#    system_prompt: xxx
+#    build_in_tools: ["Skill", "Read", "Write", "Bash"]
+#    disallowed_tools: ["Read"]
     skills: ["skill-creator"]
     permission_mode: "acceptEdits"
     max_turns: 50
@@ -64,8 +65,9 @@ evolve:
   evaluator:
     timeout: 1200
     agent:
-      # system_prompt: xxx
-      # build_in_tools: ["Skill", "Read", "Write", "Bash"]
+#      system_prompt: xxx
+#      build_in_tools: ["Skill", "Read", "Write", "Bash"]
+#      disallowed_tools: ["Read"]
       skills: ["skill-creator"]
       permission_mode: "acceptEdits"
       max_turns: 50

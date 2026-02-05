@@ -12,6 +12,7 @@ class ClaudeAgentConfig:
     llm_config: LLMConfig
     system_prompt: Optional[str] = None
     build_in_tools: Optional[List[str]] = None
+    disallowed_tools: Optional[List[str]] = None
     skills: Optional[List[str]] = None
     max_turns: Optional[int] = None
     max_thinking_tokens: Optional[int] = None

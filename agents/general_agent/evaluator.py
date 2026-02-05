@@ -368,6 +368,7 @@ class GeneralEvaluator(Evaluator):
             api_key=self.config.llm_config.api_key,
             url=self.config.llm_config.url,
             work_dir=work_dir,
+            disallowed_tools=self.config.agent.get("disallowed_tools"),
             tool_list=self.config.agent.get("build_in_tools"),
             custom_tools=custom_tools or {},
             system_prompt=self.config.agent.get("system_prompt") or system_prompt,

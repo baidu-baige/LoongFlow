@@ -88,6 +88,7 @@ class ClaudeCodeAgent(AgentBase):
         url: Optional[str] = None,
         work_dir: Optional[str] = None,
         tool_list: Optional[List[str]] = None,
+        disallowed_tools: Optional[List[str]] = None,
         custom_tools: Optional[Dict[str, Dict[str, Any]]] = None,
         system_prompt: Optional[str] = None,
         permission_mode: Optional[str] = None,
@@ -132,20 +133,26 @@ class ClaudeCodeAgent(AgentBase):
         # Set default working directory
         self.work_dir = work_dir or "./"
 
-        # Set default tools if not provided
-        self.tool_list = tool_list or [
-            "Read",
-            "Write",
-            "Edit",
-            "Grep",
-            "Glob",
-            "Bash",
-            "Skill",
-            "Task",
-        ]
+        # Set default tools only if None, keep empty list as is
+        self.tool_list = (
+            tool_list
+            if tool_list is not None
+            else [
+                "Read",
+                "Write",
+                "Edit",
+                "Grep",
+                "Glob",
+                "Bash",
+                "Skill",
+                "Task",
+            ]
+        )
 
         # Store custom tools configuration
         self.custom_tools = custom_tools or {}
+
+        self.disallowed_tools = disallowed_tools
 
         # Store system prompt
         self.system_prompt = system_prompt
@@ -180,6 +187,7 @@ class ClaudeCodeAgent(AgentBase):
         options_kwargs = {
             "model": self.model,
             "allowed_tools": allowed_tools,
+            "disallowed_tools": disallowed_tools,
             "permission_mode": permission_mode,
         }
 
@@ -203,6 +211,7 @@ class ClaudeCodeAgent(AgentBase):
             options_kwargs["max_thinking_tokens"] = max_thinking_tokens
 
         self.options = ClaudeAgentOptions(**options_kwargs)
+        self.logger.info(f"[Claude Agent] {tool_list}, {self.tool_list}")
 
     def _validate_tool_name(self, name: str) -> None:
         """
@@ -311,6 +320,7 @@ class ClaudeCodeAgent(AgentBase):
         options_kwargs = {
             "model": self.model,
             "allowed_tools": allowed_tools,
+            "disallowed_tools": self.disallowed_tools,
             "permission_mode": self.permission_mode,
         }
 
@@ -368,6 +378,8 @@ class ClaudeCodeAgent(AgentBase):
             f"query_preview: {input_query[:100] + '...' if len(input_query) > 100 else input_query}, "
             f"tool_count: {len(self.tool_list) + len(self.custom_tools)}"
         )
+
+        self.logger.info(f"[Claude Agent] options: {self.options}")
 
         try:
             # Use ClaudeSDKClient for better connection management

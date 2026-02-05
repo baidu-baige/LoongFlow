@@ -293,6 +293,7 @@ class GeneralExecuteAgent(Worker):
             url=self.config.llm_config.url,
             work_dir=candidate_dir,  # Agent works inside candidate directory
             tool_list=self.config.build_in_tools,
+            disallowed_tools=self.config.disallowed_tools,
             custom_tools={},  # No custom tools for now
             system_prompt=self.config.system_prompt or GENERAL_EXECUTOR_SYSTEM,
             permission_mode=self.config.permission_mode or "acceptEdits",

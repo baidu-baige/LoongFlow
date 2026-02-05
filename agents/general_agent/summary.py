@@ -3,6 +3,7 @@
 """
 This file provides general planner implementation based on Claude Code Agent
 """
+
 import copy
 import json
 import os
@@ -217,7 +218,9 @@ class GeneralSummaryAgent(Worker):
                 timestamp=time.time(),
                 generation=len(trace_list),
                 score=best_evaluation_data.get("score", 0),
-                evaluation=json.dumps(best_evaluation_data, ensure_ascii=False, indent=2),
+                evaluation=json.dumps(
+                    best_evaluation_data, ensure_ascii=False, indent=2
+                ),
                 metadata=metadata,
             ),
         )
@@ -284,6 +287,7 @@ class GeneralSummaryAgent(Worker):
             url=self.config.llm_config.url,
             work_dir=work_dir,
             tool_list=self.config.build_in_tools,
+            disallowed_tools=self.config.disallowed_tools,
             custom_tools=database_tools,
             system_prompt=self.config.system_prompt or GENERAL_SUMMARY_SYSTEM,
             permission_mode=self.config.permission_mode or "acceptEdits",
