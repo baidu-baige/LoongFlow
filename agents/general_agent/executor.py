@@ -3,6 +3,7 @@
 """
 This file provides general planner implementation based on Claude Code Agent
 """
+
 import copy
 import json
 import os
@@ -162,7 +163,14 @@ class GeneralExecuteAgent(Worker):
         )
         try:
             # Create a message with the solution directory path
-            solution_message = Message.from_text(data=candidate_dir, role=Role.USER)
+            solution_message = Message.from_text(
+                data={
+                    "best_solution_path": candidate_dir,
+                    "best_plan": parent_ctx.stage1_plan,
+                    "task": context.task,
+                },
+                role=Role.USER,
+            )
             evaluation_result = await self.evaluator.evaluate(solution_message, context)
 
             if evaluation_result is None:

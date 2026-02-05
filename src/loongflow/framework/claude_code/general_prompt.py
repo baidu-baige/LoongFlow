@@ -549,6 +549,12 @@ Important:
 
 GENERAL_EVALUATOR_SIMPLE_USER = """Evaluate the following solution through ACTIVE VERIFICATION.
 
+# Task Objective
+{task}
+
+# Plan
+{plan}
+
 ## Solution to Evaluate
 {solution}
 

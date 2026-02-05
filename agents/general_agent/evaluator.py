@@ -112,7 +112,7 @@ class GeneralEvaluator(Evaluator):
             self.work_dir = work_dir
 
             # Extract solution directory from message
-            solution_dir = self._extract_solution(message)
+            solution_dir, plan, task = self._extract_solution(message)
 
             evaluation_mode = "Custom Tool" if self.config.evaluate_code else "AI Agent"
             logger.info(
@@ -124,13 +124,13 @@ class GeneralEvaluator(Evaluator):
                 logger.debug(
                     f"[{context.trace_id}] Evaluator: 🔧 Using custom evaluation file"
                 )
-                return await self._evaluate_with_custom_file(solution_dir)
+                return await self._evaluate_with_custom_file(solution_dir, plan, task)
             else:
                 # Self-Evaluation Mode: Use AI Agent to evaluate
                 logger.debug(
                     f"[{context.trace_id}] Evaluator: 🤖 Using AI agent evaluation"
                 )
-                return await self._evaluate_with_ai_agent(solution_dir)
+                return await self._evaluate_with_ai_agent(solution_dir, plan, task)
 
         except Exception as e:
             trace_id = context.trace_id if context else "unknown"
@@ -165,7 +165,7 @@ class GeneralEvaluator(Evaluator):
             # The ClaudeCodeAgent should handle interruption
             pass
 
-    def _extract_solution(self, message: Message) -> str:
+    def _extract_solution(self, message: Message) -> tuple[str, str, str]:
         """
         Extract solution directory path from message.
 
@@ -180,25 +180,37 @@ class GeneralEvaluator(Evaluator):
 
         data = elements[0].data
 
-        if not isinstance(data, str):
+        best_solution_path = data.get("best_solution_path")
+        best_plan = data.get("best_plan")
+        task = data.get("task")
+
+        if not isinstance(best_solution_path, str):
             raise ValueError(
-                f"Solution must be a directory path string, got {type(data)}"
+                f"Solution must be a directory path string, got {type(best_solution_path)}"
             )
+
+        if not isinstance(best_plan, str):
+            raise ValueError(f"Plan must be a string, got {type(best_plan)}")
+
+        if not isinstance(task, str):
+            raise ValueError(f"Task must be a string, got {type(task)}")
 
         # Ensure absolute path
-        if not os.path.isabs(data):
-            data = os.path.abspath(data)
+        if not os.path.isabs(best_solution_path):
+            best_solution_path = os.path.abspath(best_solution_path)
 
         # Validate it's a directory
-        if not os.path.exists(data):
-            raise FileNotFoundError(f"Solution directory not found: {data}")
-        if not os.path.isdir(data):
+        if not os.path.exists(best_solution_path):
+            raise FileNotFoundError(
+                f"Solution directory not found: {best_solution_path}"
+            )
+        if not os.path.isdir(best_solution_path):
             raise ValueError(
-                f"Solution must be a directory (Solution Pack), got file: {data}"
+                f"Solution must be a directory (Solution Pack), got file: {best_solution_path}"
             )
 
-        logger.debug(f"Evaluator: Solution Pack directory: {data}")
-        return data
+        logger.debug(f"Evaluator: Solution Pack directory: {best_solution_path}")
+        return best_solution_path, best_plan, task
 
     def _load_skills(self, work_dir: str) -> None:
         """Load configured skills."""
@@ -316,6 +328,8 @@ class GeneralEvaluator(Evaluator):
     async def _run_evaluation_agent(
         self,
         solution: str,
+        plan: str,
+        task: str,
         system_prompt: str,
         user_prompt: str,
         custom_tools: dict[str, Any] | None = None,
@@ -327,6 +341,8 @@ class GeneralEvaluator(Evaluator):
 
         Args:
             solution: The solution to evaluate
+            plan: The plan chosen by the planner
+            task: The original user task
             system_prompt: System prompt for the agent
             user_prompt: User prompt template (will be formatted with solution)
             custom_tools: Optional custom tools for the agent
@@ -367,6 +383,8 @@ class GeneralEvaluator(Evaluator):
             solution=solution,
             workspace=work_dir,
             loaded_skills=loaded_skills_info,
+            plan=plan,
+            task=task,
         )
 
         # Execute evaluation with timeout
@@ -386,12 +404,16 @@ class GeneralEvaluator(Evaluator):
         # Parse evaluation result
         return self._parse_evaluation_result(result_message)
 
-    async def _evaluate_with_custom_file(self, solution_dir: str) -> EvaluationResult:
+    async def _evaluate_with_custom_file(
+        self, solution_dir: str, plan: str, task: str
+    ) -> EvaluationResult:
         """
         Evaluate using user's evaluation file wrapped as an Agent tool.
 
         Args:
             solution_dir: Absolute path to Solution Pack directory
+            plan: The plan chosen by the planner
+            task: The original user task
 
         Returns:
             EvaluationResult with score, summary, metrics, and artifacts.
@@ -412,17 +434,23 @@ class GeneralEvaluator(Evaluator):
 
         return await self._run_evaluation_agent(
             solution=solution_context,  # Show structure to agent
+            plan=plan,
+            task=task,
             system_prompt=GENERAL_EVALUATOR_TOOL_SYSTEM,
             user_prompt=GENERAL_EVALUATOR_TOOL_USER,
             custom_tools={"evaluate_solution": eval_tool},
         )
 
-    async def _evaluate_with_ai_agent(self, solution_dir: str) -> EvaluationResult:
+    async def _evaluate_with_ai_agent(
+        self, solution_dir: str, plan: str, task: str
+    ) -> EvaluationResult:
         """
         Evaluate using AI Agent (self-evaluation mode).
 
         Args:
             solution_dir: Absolute path to Solution Pack directory
+            plan: The plan chosen by the planner
+            task: The original user task
 
         Returns:
             EvaluationResult with score and summary.
@@ -432,6 +460,8 @@ class GeneralEvaluator(Evaluator):
 
         return await self._run_evaluation_agent(
             solution=solution_context,
+            plan=plan,
+            task=task,
             system_prompt=GENERAL_EVALUATOR_SIMPLE_SYSTEM,
             user_prompt=GENERAL_EVALUATOR_SIMPLE_USER,
         )

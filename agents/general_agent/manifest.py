@@ -123,8 +123,7 @@ Type classification rules:
 Entrypoint heuristics:
 - Look for main.py, __main__.py, run.py, app.py, index.py
 - test_entrypoint: look for test_main.py, run_tests.py, or main test file
-
-REMEMBER: Your response must be ONLY the JSON object. No text before or after."""
+"""
 
     def __init__(self, llm_config: Dict[str, Any]):
         """
@@ -155,7 +154,7 @@ REMEMBER: Your response must be ONLY the JSON object. No text before or after.""
 {file_tree}
 ```
 
-Generate the manifest blocked between ```json and ```"""
+Start generating the manifest"""
 
         # Call LLM
         try:
