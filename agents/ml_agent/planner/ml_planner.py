@@ -120,10 +120,7 @@ class MLPlannerAgent(Worker):
         agent.context.toolkit.register_tool(
             GetBestSolutionsTool(
                 solutions.simplify_solution(
-                    partial(
-                        self.database.get_best_solutions, island_id=context.island_id
-                    )
-                )
+                    partial(self.database.get_best_solutions, island_id=context.island_id))
             )
         )
 
@@ -223,23 +220,17 @@ class MLPlannerAgent(Worker):
     def _init_model(self) -> LiteLLMModel:
         """Initialize or reuse the LLM model."""
         llm = self.config.llm_config
-        if not llm or not all([llm.model]):
+        if not llm or not all([llm.model, llm.url, llm.api_key]):
             raise ValueError("model_name, url, and api_key are required in llm_config.")
 
         return LiteLLMModel.from_config(llm.model_dump())
 
     async def _create_agent(self, model: LiteLLMModel) -> ReActAgent:
         function_tool_list = [
-            GetMemoryStatusTool(
-                solutions.simplify_solution(self.database.memory_status)
-            ),
+            GetMemoryStatusTool(solutions.simplify_solution(self.database.memory_status)),
             GetSolutionsTool(solutions.simplify_solution(self.database.get_solutions)),
-            GetParentsByChildIdTool(
-                solutions.simplify_solution(self.database.get_parents_by_child_id)
-            ),
-            GetChildsByParentTool(
-                solutions.simplify_solution(self.database.get_childs_by_parent_id)
-            ),
+            GetParentsByChildIdTool(solutions.simplify_solution(self.database.get_parents_by_child_id)),
+            GetChildsByParentTool(solutions.simplify_solution(self.database.get_childs_by_parent_id)),
         ]
         toolkit = Toolkit()
         for tool in function_tool_list:

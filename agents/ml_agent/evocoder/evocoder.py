@@ -201,9 +201,9 @@ class EvoCoder(AgentBase):
     def _extract_code(self, code_message: Message) -> Message | str:
         code_content = code_message.get_elements(ContentElement)
         if (
-            not code_content
-            or len(code_content) == 0
-            or not isinstance(code_content[0].data, str)
+                not code_content
+                or len(code_content) == 0
+                or not isinstance(code_content[0].data, str)
         ):
             raise ValueError(
                 "Python code not found or incomplete code block detected. Please provide complete code with matching delimiters"
@@ -253,7 +253,7 @@ class EvoCoder(AgentBase):
             sender="user",
             role=Role.USER,
             data=PackageInstallerPrompts.USER.format(
-                error_msg=evaluation_result.summary, language="python"
+                error_msg=evaluation_result.summary,
             ),
         )
 

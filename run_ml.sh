@@ -144,7 +144,7 @@ do_init() {
     info "Target environment name: $ENV_NAME"
 
     # --- Create/update conda environment ---
-    if mamba env list | grep -q "^${ENV_NAME} "; then
+    if mamba env list | grep -q "${ENV_NAME} "; then
         warning "Environment '$ENV_NAME' already exists. skip"
     else
         info "Creating new environment from $env_file..."
@@ -368,8 +368,8 @@ do_stop() {
 do_global_cleanup() {
     info "Performing global cleanup..."
 
-    # Clean up potentially remaining ml_agent.py processes
-    pkill -f "agents/ml_agent/ml_agent.py" 2>/dev/null || true
+    # Clean up potentially remaining ml_evolve_agent.py processes
+    pkill -f "agents/ml_agent/ml_evolve_agent.py" 2>/dev/null || true
 
     success "Cleanup complete."
 }

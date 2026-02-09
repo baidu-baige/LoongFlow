@@ -146,7 +146,7 @@ do_init() {
     info "Target environment name: $ENV_NAME"
 
     # --- Create or update the conda environment ---
-    if mamba env list | grep -q "${ENV_NAME}"; then
+    if mamba env list | grep -q "${ENV_NAME} "; then
         warning "Environment '$ENV_NAME' already exists. skip"
     else
         info "Creating new environment from $env_file..."
@@ -249,7 +249,7 @@ do_run() {
     local mlebench_examples="$SCRIPT_DIR/agents/ml_agent/examples/mlebench"
     local config_template="$mlebench_examples/task_config.yaml"
     local eval_program="$mlebench_examples/eval_program.py"
-    local evolve_script="$SCRIPT_DIR/agents/ml_agent/ml_agent.py"
+    local evolve_script="$SCRIPT_DIR/agents/ml_agent/ml_evolve_agent.py"
     local agent_config_path="$competition_dir/task_config.yaml"
 
     # --- Path vertification ---
@@ -410,8 +410,8 @@ do_stop() {
 do_global_cleanup() {
     info "Performing global cleanup..."
 
-    # Clean up any residual ml_agent.py processes
-    pkill -f "agents/ml_agent/ml_agent.py" 2>/dev/null || true
+    # Clean up any residual ml_evolve_agent.py processes
+    pkill -f "agents/ml_agent/ml_evolve_agent.py" 2>/dev/null || true
 
     success "Cleanup complete."
 }

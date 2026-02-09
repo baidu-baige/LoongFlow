@@ -81,6 +81,9 @@ class MLAgent(BasePESRunner):
         config["evolve"]["metadata"]["gpu_available"] = hardware_context.get(
             "gpu_available", False
         )
+        config["evolve"]["metadata"]["gpu_count"] = hardware_context.get(
+            "gpu_count", 0
+        )
         config["evolve"]["metadata"]["task_dir_structure"] = (
             system.get_directory_structure(args.task_data_path)
         )

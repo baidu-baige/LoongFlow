@@ -96,12 +96,8 @@ class MLSummaryAgent(Worker):
     async def _create_agent(self, model: LiteLLMModel) -> ReActAgent:
         function_tool_list = [
             GetSolutionsTool(solutions.simplify_solution(self.db.get_solutions)),
-            GetParentsByChildIdTool(
-                solutions.simplify_solution(self.db.get_parents_by_child_id)
-            ),
-            GetChildsByParentTool(
-                solutions.simplify_solution(self.db.get_childs_by_parent_id)
-            ),
+            GetParentsByChildIdTool(solutions.simplify_solution(self.db.get_parents_by_child_id)),
+            GetChildsByParentTool(solutions.simplify_solution(self.db.get_childs_by_parent_id)),
         ]
         toolkit = Toolkit()
         for tool in function_tool_list:
@@ -175,10 +171,10 @@ class MLSummaryAgent(Worker):
     async def _gather(self, context: Context, message: Message) -> Evidence:
         content = message.get_elements(ContentElement)
         if (
-            not content
-            or len(content) == 0
-            or not content[0].data
-            or not isinstance(content[0].data, dict)
+                not content
+                or len(content) == 0
+                or not content[0].data
+                or not isinstance(content[0].data, dict)
         ):
             raise ValueError(f"Missing content element data.")
         data = content[0].data
@@ -267,10 +263,8 @@ class MLSummaryAgent(Worker):
         agent = await self._create_agent(self.model)
         try:
             agent.context.toolkit.register_tool(
-                GetBestSolutionsTool(
-                    solutions.simplify_solution(
-                        partial(self.db.get_best_solutions, island_id=context.island_id)
-                    )
+                GetBestSolutionsTool(solutions.simplify_solution(
+                    partial(self.db.get_best_solutions, island_id=context.island_id))
                 )
             )
             agent.context.toolkit.register_tool(build_summary_analysis_tool(context))
@@ -310,7 +304,7 @@ class MLSummaryAgent(Worker):
             # This formula automatically ensures that if score_diff is negative,
             # child_weight is lower than parent_weight, otherwise higher. ALPHA = 2 is the amplification factor
             child_weight = (
-                parent_weight + (3 * score_diff * step_size) + 3 * child_solution.score
+                    parent_weight + (3 * score_diff * step_size) + 3 * child_solution.score
             )
             if child_weight < 0:
                 # Prevent weight from being too small; minimum value is 0.05

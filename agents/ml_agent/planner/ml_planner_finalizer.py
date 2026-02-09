@@ -29,13 +29,13 @@ class MLPlan(BaseModel):
         default="",
         description="Plans for the data loading and initial preparation stage.")
 
-    cross_validation: str = Field(
+    get_splitter: str = Field(
         default="",
-        description="Plans for defining the cross-validation strategy.")
+        description="Plans for defining the data splitting and validation strategy.")
 
-    create_features: str = Field(
+    preprocess: str = Field(
         default="",
-        description="Plans for the feature engineering stage.")
+        description="Plans for the data preprocessing and feature engineering stage.")
 
     train_and_predict: str = Field(
         default="",

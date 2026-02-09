@@ -19,7 +19,6 @@ class WriteSummaryAnalysisArgs(BaseModel):
     """
     Arguments for writing summary analysis before generating final reflection output.
     """
-
     analysis_content: str = Field(
         ...,
         description=(
@@ -28,7 +27,7 @@ class WriteSummaryAnalysisArgs(BaseModel):
             "2. Performance Attribution - connect score changes to specific stage modifications\n"
             "3. Evidence Collection - gather what worked/failed with supporting evidence\n"
             "4. Strategic Assessment - prioritize stages and recommend next direction"
-        ),
+        )
     )
 
 
@@ -67,7 +66,10 @@ def build_summary_analysis_tool(context: Context) -> FunctionTool:
             logger.error(f"Failed to save summary analysis: {e}")
             raise IOError(f"Failed to save summary analysis file: {e}")
 
-        return {"status": "success", "message": "Summary analysis saved."}
+        return {
+            "status": "success",
+            "message": "Summary analysis saved."
+        }
 
     return FunctionTool(
         func=write_summary_analysis,
@@ -75,5 +77,5 @@ def build_summary_analysis_tool(context: Context) -> FunctionTool:
         name="write_summary_analysis",
         description=(
             "Write structured summary analysis before generating final reflection. "
-        ),
+        )
     )

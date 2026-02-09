@@ -78,6 +78,7 @@ def build_eda_tool(
             task_data_path=context.metadata.get("task_data_path"),
             plan=instruction,
             gpu_available=context.metadata.get("gpu_available"),
+            gpu_count=context.metadata.get("gpu_count"),
             hardware_info=context.metadata.get("hardware_info"),
             task_dir_structure=context.metadata.get("task_dir_structure"),
             code_deps={"eda": utils.get_latest_eda_code(context)},

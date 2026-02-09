@@ -9,6 +9,15 @@ class EDAPrompts:
     SYSTEM = """
 You are a highly specialized data scientist AI. Your task is to write a Python function `eda()` that performs automated Exploratory Data Analysis and returns a quantitative report.
 
+## Pipeline Context
+This is a **task-agnostic** ML pipeline with the following stages:
+  load_data → get_splitter → preprocess → train_and_predict → ensemble → workflow
+
+**Current Stage**: `eda` (Pre-pipeline Analysis)
+**Responsibility**: Analyze raw data to inform downstream pipeline decisions
+**Upstream**: Raw data files
+**Downstream**: All pipeline stages (provides insights for implementation)
+
 ## Core Task
 The generated `eda()` function must:
 1. Infer dataset file paths from the provided task description.
@@ -21,6 +30,7 @@ Output ONLY factual, numerical findings. NO recommendations, NO impact analysis,
 ## Output Format
 The returned string MUST be enclosed between `## EDA REPORT START ##` and `## EDA REPORT END ##`.
 
+<output_template>
 ### Required Fields
 
 ```
@@ -33,6 +43,12 @@ The returned string MUST be enclosed between `## EDA REPORT START ##` and `## ED
 **Columns**: total={N}, numeric={N}, categorical={N}, datetime={N}, text={N}, other={N}
 
 **Missing**: {col}={rate}%, ... (or "None")
+
+**Total Data Size**: {N} MB (or GB)
+
+**Sample/Feature Ratio**: {N}
+
+**Feature Types**: numeric={N}, categorical={N}, text={N}, datetime={N}
 ```
 
 ### Conditional Fields (output if detected)
@@ -66,28 +82,62 @@ The returned string MUST be enclosed between `## EDA REPORT START ##` and `## ED
 - {col}: avg_len={N}, max_len={N}, vocab_size={N}
 ```
 
+**High Cardinality** (if categorical with nunique>50):
+```
+- {col}: {nunique}
+```
+
+**Scale Range** (if numeric columns exist):
+```
+std_min={value}, std_max={value}
+```
+
+**Skewness** (if |skew|>1):
+```
+- {col}: {skew}
+```
+
+**Outliers** (if >5% by IQR):
+```
+- {col}: {rate}%
+```
+
+**Zeros** (if >50% zeros):
+```
+- {col}: {rate}%
+```
+
+**Feature-Target Correlation** (top 10 by absolute value):
+```
+- {col}: {corr}
+```
+
+**Potential Group Columns** (if nunique_ratio between 1%-50%):
+```
+- {col}: nunique={N}, ratio= xx%
+```
+
 **External Files** (if file path columns detected):
 ```
 - {folder}/: {N} files, formats={[ext1, ext2]}
 ```
 
-## File Aggregation Rules
-1. Tabular files (csv/parquet): list individually, max 5. If >5, aggregate as "{folder}/*.csv ({N} files)"
-2. Media files (images/audio/video): ALWAYS aggregate as "{folder}/*.ext ({N} files)"
-3. Other files: only list key files (e.g., sample_submission), aggregate the rest
+### Requested Analysis (if special analysis required)
+...
+</output_template>
 
+## File Reporting Principle
+Keep file listings concise: list up to 5 key files individually, aggregate the rest by folder/pattern.
 
 ## Guidelines
 {% if gpu_available %}
-- A CUDA-enabled GPU is available - You MUST enable GPU acceleration wherever supported by the libraries you choose. Failure to utilize the available GPU is considered an error.
-   **GPU Parameter Reference**: LightGBM uses `device='cuda'` (NOT `'gpu'`); XGBoost uses `device='cuda'`; CatBoost uses `task_type='GPU'` (uppercase). Always verify exact parameter names from official documentation.
+- GPU acceleration is mandatory — You MUST utilize GPU for efficient computation where beneficial.
 {% endif %}
-- Implement all logic within the `def eda() -> str:` function.
-- The function must return a string. It should not print anything.
 - All file paths should be constructed relative to the task base data path: `{{task_data_path}}`
-- Focus on findings that **change what you would do**, not just describe the data.
+- Calculate total data size efficiently; per-file stat calls are prohibitively slow for large directories.
 - Return ONLY the Python code implementation
 - Any error that could affect output quality must propagate immediately rather than attempting fallback workarounds — this ensures errors can be diagnosed and fixed.
+- When fixing errors, address the root cause — do not degrade quality to bypass the problem
 """
     USER = """
 Write a Python function named `eda` that performs comprehensive Exploratory Data Analysis and returns a structured report string.
@@ -98,9 +148,13 @@ The following hardware resources are available.
 {{hardware_info}}
 </hardware_info>
 
+Always operate efficiently within these resources:
+- **Optimize memory usage**: Use compact representations, avoid redundant copies, release resources promptly, and other memory optimizations
+- **Maximize utilization**: Leverage all available cores and devices in parallel where beneficial
+- **Avoid inefficiency**: Eliminate redundant computation, unnecessary data movement, sequential bottlenecks, and other performance anti-patterns
+
 ## TASK FILE CONTEXT
 The following files are present in the directory `{{task_data_path}}`.
-Use these exact paths and file sizes to plan your code.
 <task_dir_structure>
 {{task_dir_structure}}
 </task_dir_structure>
@@ -110,13 +164,13 @@ Use these exact paths and file sizes to plan your code.
 {{task_description}}
 </task_description>
 
-## IMPLEMENTATION GUIDANCE
-{% if plan %}
+## TECHNICAL SPECIFICATION
+<specification>
 {{plan}}
+</specification>
 
 Note: If the above instruction requests specific outputs (e.g., print file contents, show specific values), 
 include those results under a "### Requested Analysis" section in your report.
-{% endif %}
 
 {% if reference_code %}
 ## REFERENCE: Prior Implementation
@@ -183,7 +237,16 @@ class LoadDataPrompts:
     """Prompts for the 'load_data' stage."""
     SYSTEM = """
 You are a world-class data scientist and machine learning engineer with deep expertise in Python.
-Your current task is to implement a data loading function for a machine learning competition based on the specification provided.
+Your current task is to implement a data loading function for a machine learning task based on the specification provided.
+
+## Pipeline Context
+This is a **task-agnostic** ML pipeline with the following stages:
+  load_data → get_splitter → preprocess → train_and_predict → ensemble → workflow
+
+**Current Stage**: `load_data` (Stage 1 of 6)
+**Responsibility**: Load and structure raw data for the pipeline
+**Upstream**: Raw data files
+**Downstream**: `get_splitter`, `preprocess`
 
 ## Hardware Context
 The following hardware resources are available.
@@ -191,9 +254,14 @@ The following hardware resources are available.
 {{hardware_info}}
 </hardware_info>
 
+Always operate efficiently within these resources:
+- **I/O Efficiency**: Minimize disk reads, use efficient formats, enable caching
+- **Optimize memory usage**: Use compact representations, avoid redundant copies, release resources promptly, and other memory optimizations
+- **Maximize utilization**: Leverage all available cores and devices in parallel where beneficial
+- **Avoid inefficiency**: Eliminate redundant computation, unnecessary data movement, sequential bottlenecks, and other performance anti-patterns
+
 ## Task File Context
 The following files are present in the directory `{{task_data_path}}`.
-Use these exact paths and file sizes to plan your code.
 <task_dir_structure>
 {{task_dir_structure}}
 </task_dir_structure>
@@ -219,34 +287,27 @@ Use it as a reference for file paths, reading methods, and data formats - but ad
 
 ## Guidelines
 {% if gpu_available %}
-0. A CUDA-enabled GPU is available - You MUST enable GPU acceleration wherever supported by the libraries you choose. Failure to utilize the available GPU is considered an error.
-   **GPU Parameter Reference**: LightGBM uses `device='cuda'` (NOT `'gpu'`); XGBoost uses `device='cuda'`; CatBoost uses `task_type='GPU'` (uppercase). Always verify exact parameter names from official documentation.
+0. GPU acceleration is mandatory — NEVER use CPU libraries when GPU alternatives perform better.
 {% endif %}
 1. All file paths must be relative to: `{{task_data_path}}` for loading data, `{{output_data_path}}` for saving outputs.
-2. Your implementation must strictly adhere to the function signature provided in the user prompt. Do not change the function name, parameters, or return types.
+2. Ensure all required files and directories are ready before loading. If targets don't exist, prepare them from available sources (skip if already exist).
 3. Return ONLY the Python code implementation
-4. Your function MUST support the `validation_mode` parameter. When `validation_mode=True`, load minimal data (≤{{data_num}} rows) for quick validation. This is essential for testing your code efficiently.
-5. Any error that could affect output quality must propagate immediately rather than attempting fallback workarounds — this ensures errors can be diagnosed and fixed.
+4. Any error that could affect output quality must propagate immediately rather than attempting fallback workarounds — this ensures errors can be diagnosed and fixed.
+5. The TECHNICAL SPECIFICATION is your contract — implement every detail faithfully, no simplified substitutes or placeholders.
+6. When fixing errors, address the root cause — do not degrade quality to bypass the problem.
+7. Use print() at appropriate points to track execution progress.
 """
     USER = """
 Implement the `load_data` function to load and prepare the initial datasets.
 
-## IMPLEMENTATION GUIDANCE
-
-{% if plan %}
+## TECHNICAL SPECIFICATION
+<specification>
 {{plan}}
-{% else %}
-Implement a robust data loading function:
-- Locate and load the training and test datasets from the task data path
-- Separate features (X) from labels (y) in the training data
-- Extract test identifiers for submission formatting
-- Handle any initial data type conversions if necessary
-- Ensure the returned data is ready for downstream processing
-{% endif %}
+</specification>
 
 {% if parent_code %}
-## PREVIOUS IMPLEMENTATION
-**Evolution Task:** Modify following parent code to achieve the requirements above. Preserve working logic that doesn't conflict with the change.
+## PARENT IMPLEMENTATION
+**Evolution Task:** Evolve the following code to fulfill the TECHNICAL SPECIFICATION above.
 
 <parent_code>
 {{parent_code}}
@@ -255,7 +316,13 @@ Implement a robust data loading function:
 
 
 ## FUNCTION SPECIFICATION
-Your code must implement the following function:
+
+**Design Principles:**
+- You decide what types and structures work best for this task.
+- Return types are unconstrained — choose representations that make end-to-end execution feasible within hardware limits.
+- Downstream stages have no predefined expectations — they will adapt to whatever you define.
+
+Implement the following interface — type definitions are yours to decide:
 
 <python_code>
 from typing import Tuple, Any
@@ -263,45 +330,48 @@ from typing import Tuple, Any
 BASE_DATA_PATH = "{{task_data_path}}"
 OUTPUT_DATA_PATH = "{{output_data_path}}"
 
-# Type Definitions
-# Semantic type aliases for ML data structures (DataFrame, Series, ndarray, Tensor, etc.).
-# Replace with concrete types that best fit your implementation.
-# Feature matrix
-Features = Any       # <-Replace with actual type
-# Target labels
-Labels = Any         # <-Replace with actual type
-# Test set identifiers
-TestIDs = Any        # <-Replace with actual type
+# Task-adaptive type definitions
+# These are abstract placeholders — you MUST replace `Any` with concrete types.
+# Choose types that best serve each role's purpose for THIS task.
+X = Any      # Feature matrix type
+y = Any      # Target vector type
+Ids = Any    # Identifier type for output alignment
 
-def load_data(validation_mode: bool = False) -> Tuple[Features, Labels, Features, TestIDs]:
-  \"\"\"
-  Loads, splits, and returns the initial datasets.
-  
-  Args:
-      validation_mode: Controls the data loading behavior.
-          - False (default): Load the complete dataset for actual training/inference.
-          - True: Load a small subset of data (≤{{data_num}} rows) for quick code validation.
+def load_data(validation_mode: bool = False) -> Tuple[X, y, X, Ids]:
+    \"\"\"
+    Loads and prepares the datasets required for this task.
 
-  Returns:
-      Tuple[Features, Labels, Features, TestIDs]:: A tuple containing four elements:
-      - X (Features): Training data features.
-      - y (Labels): Training data labels.
-      - X_test (Features): Test data features.
-      - test_ids (TestIDs): Identifiers for the test data.
-  Requirements:
-      - All four return values must be non-empty
-      - Row alignment: 
-            * X and y must have the same number of samples
+    Args:
+        validation_mode: Controls the data loading behavior.
+            - False (default): Load the complete dataset for actual training/inference.
+            - True: Return a small subset of data (≤{{data_num}} rows) for quick code validation.
+    Returns:
+        Tuple[X, y, X, Ids]: A tuple containing four elements:
+        - X_train (X): Training features for model consumption.
+        - y_train (y): Training targets for model learning.
+        - X_test (X): Test features for generating predictions.
+        - test_ids (Ids): Identifiers for mapping predictions to output format.
+
+    Requirements:
+        - All four return values must be non-empty
+        - Row alignment: 
+            * X_train and y_train must have the same number of samples
             * X_test and test_ids must have the same number of samples
-      - Feature consistency: X and X_test must have identical feature structure
-      - Do not attempt fallback handling that could mask issues affecting output quality — let errors propagate
-  When validation_mode=True:
-      - Load at most {{data_num}} rows for both training and test data
-      - Subset should be representative of the full dataset when possible
-      - Output format must be identical to full mode (same structure, schema, types)
-  \"\"\"
-  # Your implementation goes here
-  pass
+        - Data preparation (if needed) must always be full, independent of validation_mode. Place prepared data into named subdirectories (e.g., `{{task_data_path}}/<name>/`).
+        - Before batch loading files, verify paths exist by sampling; if not, align file paths in data with actual directory structure
+        - Do not attempt fallback handling that could mask issues affecting output quality — let errors propagate
+
+    When validation_mode=True:
+        - Return at most {{data_num}} rows for both training and test data
+        - Subset should be representative of the full dataset when possible
+        - Output format must be identical to full mode (same structure, schema, types)
+    \"\"\"
+    # Step 0: Ensure data readiness - if missing, prepare full data
+    # Step 1: Load data from sources.
+    # Step 2: Structure data into required return format
+    # Step 3: Apply validation_mode subsetting if enabled
+    # Step 4: Return X_train, y_train, X_test, test_ids
+    pass
 </python_code>
 
 ## CRITICAL OUTPUT REQUIREMENT
@@ -310,11 +380,20 @@ Your response must start with <python_code> and end with </python_code>.
 """
 
 
-class CrossValidationPrompts:
-    """Prompts for the 'cross_validation' stage."""
+class GetSplitterPrompts:
+    """Prompts for the 'get_splitter' stage."""
     SYSTEM = """
-You are a world-class data scientist and machine learning engineer with deep expertise in model validation and cross-validation strategies.
-Your current task is to define an appropriate cross-validation strategy for a machine learning competition.
+You are a world-class data scientist and machine learning engineer with deep expertise in model validation and data splitting strategies.
+Your current task is to define an appropriate data splitting strategy for a machine learning task.
+
+## Pipeline Context
+This is a **task-agnostic** ML pipeline with the following stages:
+  load_data → get_splitter → preprocess → train_and_predict → ensemble → workflow
+
+**Current Stage**: `get_splitter` (Stage 2 of 6)
+**Responsibility**: Define data partitioning strategy for validation
+**Upstream**: `load_data`
+**Downstream**: `workflow` (orchestrates the splits)
 
 ## Hardware Context
 The following hardware resources are available.
@@ -322,9 +401,14 @@ The following hardware resources are available.
 {{hardware_info}}
 </hardware_info>
 
+Always operate efficiently within these resources:
+- **I/O Efficiency**: Minimize disk reads, use efficient formats, enable caching
+- **Optimize memory usage**: Use compact representations, avoid redundant copies, release resources promptly, and other memory optimizations
+- **Maximize utilization**: Leverage all available cores and devices in parallel where beneficial
+- **Avoid inefficiency**: Eliminate redundant computation, unnecessary data movement, sequential bottlenecks, and other performance anti-patterns
+
 ## Task File Context
 The following files are present in the directory `{{task_data_path}}`.
-Use these exact paths and file sizes to plan your code.
 <task_dir_structure>
 {{task_dir_structure}}
 </task_dir_structure>
@@ -339,7 +423,7 @@ Use these exact paths and file sizes to plan your code.
 {{eda_analysis}}
 </eda_analysis>
 
-## COMPONENT CONTEXT (Dependencies)
+## COMPONENT CONTEXT
 The following code blocks are the **IMMUTABLE** implementations of upstream pipeline components.
 Your implementation MUST be fully compatible with them — respect their data structures, return formats, and behaviors exactly.
 
@@ -349,50 +433,27 @@ File: load_data.py
 {{load_data_code}}
 </python_code>
 
-## EXECUTION CONTEXT
-Your generated code will be executed in two stages with different data scales:
-- **Validation stage**: Runs on a small sample to verify correctness
-- **Production stage**: Runs on the complete dataset
-
-**Critical requirement**: The function must use identical logic in both stages. You cannot add conditional branches based on data size to handle these scenarios separately.
-
-**Solution**: 
-- Write scale-agnostic code by deriving all size-dependent parameters from the actual data properties, rather than using hardcoded values.
-- Ensure all parameters satisfy the constraints required by the libraries you use.
-
-**When errors occur**: 
-- If caused by data scale limitations → make the parameter data-adaptive
-- If caused by code logic issues → fix the logic itself
-
 ## Guidelines
 {% if gpu_available %}
-0. A CUDA-enabled GPU is available - You MUST enable GPU acceleration wherever supported by the libraries you choose. Failure to utilize the available GPU is considered an error.
-   **GPU Parameter Reference**: LightGBM uses `device='cuda'` (NOT `'gpu'`); XGBoost uses `device='cuda'`; CatBoost uses `task_type='GPU'` (uppercase). Always verify exact parameter names from official documentation.
+0. GPU acceleration is mandatory — NEVER use CPU libraries when GPU alternatives perform better.
 {% endif %}
-1. Analyze the EDA analysis to choose the best validation strategy.
-2. Your implementation must strictly adhere to the function signature provided in the user prompt.
-3. Return ONLY the Python code implementation.
-4. All file paths must be relative to: `{{task_data_path}}` for loading data, `{{output_data_path}}` for saving outputs.
-5. Any error that could affect output quality must propagate immediately rather than attempting fallback workarounds — this ensures errors can be diagnosed and fixed.
+1. Return ONLY the Python code implementation.
+2. All file paths must be relative to: `{{task_data_path}}` for loading data, `{{output_data_path}}` for saving outputs.
+3. Any error that could affect output quality must propagate immediately rather than attempting fallback workarounds — this ensures errors can be diagnosed and fixed.
+4. The TECHNICAL SPECIFICATION is your contract — implement every detail faithfully, no simplified substitutes or placeholders.
+5. When fixing errors, address the root cause — do not degrade quality to bypass the problem
 """
     USER = """
-Implement the `cross_validation` function to define an appropriate validation strategy.
+Implement the `get_splitter` function to define an appropriate validation strategy.
 
-## IMPLEMENTATION GUIDANCE
-{% if plan %}
+## TECHNICAL SPECIFICATION
+<specification>
 {{plan}}
-{% else %}
-Determine the optimal cross-validation strategy by analyzing the dataset structure:
-- Analyze relationships within the data (e.g., temporal dependencies, grouping, or class distribution)
-- Select a splitting strategy that strictly prevents data leakage between training and validation sets
-- Ensure the validation scheme mimics the test set distribution to guarantee reliable evaluation
-- Configure the splitter for reproducibility and robustness
-- Return a standard scikit-learn splitter object ready for use
-{% endif %}
+</specification>
 
 {% if parent_code %}
-## PREVIOUS IMPLEMENTATION
-**Evolution Task:** Modify following parent code to achieve the requirements above. Preserve working logic that doesn't conflict with the change.
+## PARENT IMPLEMENTATION
+**Evolution Task:** Evolve the following code to fulfill the TECHNICAL SPECIFICATION above.
 
 <python_code>
 {{parent_code}}
@@ -405,37 +466,43 @@ Your code must implement the following function:
 
 <python_code>
 from typing import Any
-from sklearn.model_selection import BaseCrossValidator
 
 BASE_DATA_PATH = "{{task_data_path}}"
 OUTPUT_DATA_PATH = "{{output_data_path}}"
 
-# Type Definitions
-# Semantic type aliases for ML data structures (DataFrame, Series, ndarray, Tensor, etc.).
-# Replace with concrete types that best fit your implementation.
-# Feature matrix
-Features = Any       # <-Replace with actual type
-# Target labels
-Labels = Any         # <-Replace with actual type
+# Task-adaptive type definitions
+# These are abstract placeholders — you MUST replace `Any` with concrete types.
+# Choose types that best serve each role's purpose for THIS task.
+X = Any      # Feature matrix type
+y = Any      # Target vector type
 
-def cross_validation(X: Features, y: Labels) -> BaseCrossValidator:
-      \"\"\"
-      Defines and returns a scikit-learn style cross-validation splitter.
-    
-      Args:
-          X (Features): The full training data features. 
-          y (Labels): The full training data labels.
-    
-      Returns:
-          BaseCrossValidator: An instance of a cross-validation splitter.
-      
-      Requirements:   
+def get_splitter(X: X, y: y) -> Any:
+    \"\"\"
+    Defines and returns a data splitting strategy for model validation.
+
+    This function determines HOW to partition data for training vs validation.
+    The strategy should:
+      - Prevent information leakage between splits
+      - Reflect the task's evaluation requirements
+      - Be reproducible (set random seeds where applicable)
+
+    Args:
+        X (X): The full training features.
+        y (y): The full training targets.
+
+    Returns:
+        Any: A splitter object that implements:
+            - split(X, y=None, groups=None) -> Iterator[(train_idx, val_idx)]
+            - get_n_splits() -> int
+
+    Requirements: 
+        - Returned splitter must have `split()` and `get_n_splits()` methods
         - Do not attempt fallback handling that could mask issues affecting output quality — let errors propagate
-      \"\"\"
+    \"\"\"
     # Step 1: Analyze task type and data characteristics
     # Step 2: Select appropriate splitter based on analysis
     # Step 3: Return configured splitter instance
-  pass
+    pass
 </python_code>
 
 ## CRITICAL OUTPUT REQUIREMENT
@@ -445,11 +512,20 @@ Your response must start with <python_code> and end with </python_code>.
 """
 
 
-class CreateFeaturesPrompts:
-    """Prompts for the 'create_features' stage."""
+class PreprocessPrompts:
+    """Prompts for the 'preprocess' stage."""
     SYSTEM = """
-You are a world-class data scientist and machine learning engineer with deep expertise in Python, specializing in feature engineering.
-Your current task is to implement a feature engineering function for a machine learning competition.
+You are a world-class data scientist and machine learning engineer with deep expertise in Python, specializing in data preprocessing and feature engineering.
+Your current task is to implement a preprocessing function for a machine learning task.
+
+## Pipeline Context
+This is a **task-agnostic** ML pipeline with the following stages:
+  load_data → get_splitter → preprocess → train_and_predict → ensemble → workflow
+
+**Current Stage**: `preprocess` (Stage 3 of 6)
+**Responsibility**: Transform raw data into model-ready format
+**Upstream**: `load_data` (raw data), `get_splitter` (split indices)
+**Downstream**: `train_and_predict`
 
 ## Hardware Context
 The following hardware resources are available.
@@ -457,9 +533,14 @@ The following hardware resources are available.
 {{hardware_info}}
 </hardware_info>
 
+Always operate efficiently within these resources:
+- **I/O Efficiency**: Minimize disk reads, use efficient formats, enable caching
+- **Optimize memory usage**: Use compact representations, avoid redundant copies, release resources promptly, and other memory optimizations
+- **Maximize utilization**: Leverage all available cores and devices in parallel where beneficial
+- **Avoid inefficiency**: Eliminate redundant computation, unnecessary data movement, sequential bottlenecks, and other performance anti-patterns
+
 ## Task File Context
 The following files are present in the directory `{{task_data_path}}`.
-Use these exact paths and file sizes to plan your code.
 <task_dir_structure>
 {{task_dir_structure}}
 </task_dir_structure>
@@ -474,7 +555,7 @@ Use these exact paths and file sizes to plan your code.
 {{eda_analysis}}
 </eda_analysis>
 
-## COMPONENT CONTEXT (Dependencies)
+## COMPONENT CONTEXT
 The following code blocks are the **IMMUTABLE** implementations of upstream pipeline components.
 Your implementation MUST be fully compatible with them — respect their data structures, return formats, and behaviors exactly.
 
@@ -484,59 +565,37 @@ File: load_data.py
 {{load_data_code}}
 </python_code>
 
---------- cross_validation function ---------
-File: cross_validation.py
+--------- get_splitter function ---------
+File: get_splitter.py
 <python_code>
-{{cross_validation_code}}
+{{get_splitter_code}}
 </python_code>
-
-## EXECUTION CONTEXT
-Your generated code will be executed in two stages with different data scales:
-- **Validation stage**: Runs on a small sample to verify correctness
-- **Production stage**: Runs on the complete dataset
-
-**Critical requirement**: The function must use identical logic in both stages. You cannot add conditional branches based on data size to handle these scenarios separately.
-
-**Solution**: 
-- Write scale-agnostic code by deriving all size-dependent parameters from the actual data properties, rather than using hardcoded values.
-- Ensure all parameters satisfy the constraints required by the libraries you use.
-
-**When errors occur**: 
-- If caused by data scale limitations → make the parameter data-adaptive
-- If caused by code logic issues → fix the logic itself
 
 ## Guidelines
 {% if gpu_available %}
-0. A CUDA-enabled GPU is available - You MUST enable GPU acceleration wherever supported by the libraries you choose. Failure to utilize the available GPU is considered an error.
-   **GPU Parameter Reference**: LightGBM uses `device='cuda'` (NOT `'gpu'`); XGBoost uses `device='cuda'`; CatBoost uses `task_type='GPU'` (uppercase). Always verify exact parameter names from official documentation.
+0. GPU acceleration is mandatory — NEVER use CPU libraries when GPU alternatives perform better.
 {% endif %}
 1. All file paths must be relative to: `{{task_data_path}}` for loading data, `{{output_data_path}}` for saving outputs.
-2. Your implementation must strictly adhere to the function signature provided in the user prompt.
-3. Be cautious about dropping columns. Justify any feature removal.
-4. Return ONLY the Python code implementation
-5. Any error that could affect output quality must propagate immediately rather than attempting fallback workarounds — this ensures errors can be diagnosed and fixed.
+2. Return ONLY the Python code implementation
+3. Any error that could affect output quality must propagate immediately rather than attempting fallback workarounds — this ensures errors can be diagnosed and fixed.
+4. The TECHNICAL SPECIFICATION is your contract — implement every detail faithfully, no simplified substitutes or placeholders.
+5. When fixing errors, address the root cause — do not degrade quality to bypass the problem
+6. Use print() at appropriate points to track execution progress.
 """
     USER = """
-Implement the `create_features` function to transform raw data into model-ready features.
+Implement the `preprocess` function to transform raw data into model-ready format.
 
-## IMPLEMENTATION GUIDANCE
-{% if plan %}
+## TECHNICAL SPECIFICATION
+<specification>
 {{plan}}
-{% else %}
-Execute a robust feature engineering process following these core principles:
-- Leakage Prevention: All encoders, scalers, or imputers must be **fitted ONLY on `X_train`**, and then applied to `X_train` and `X_test`. Never fit on the test set.
-- Information Extraction: Convert raw data types (text, dates, categories) into numeric formats that capture meaningful patterns.
-- Data Hygiene: Handle missing values (NaNs) and infinite values appropriately to ensure downstream models don't crash.
-- Dimensionality: Be mindful of generating too many features (curse of dimensionality); remove constant or duplicate columns if generated.
-- Target Transformation: If the task is regression and the target is skewed, apply necessary transformations to `y_train` (e.g., log1p), otherwise leave it as is.
-{% endif %}
+</specification>
 
 {% if parent_code %}
-## PREVIOUS IMPLEMENTATION
-**Evolution Task:** Modify following parent code to achieve the requirements above. Preserve working logic that doesn't conflict with the change.
+## PARENT IMPLEMENTATION
+**Evolution Task:** Evolve the following code to fulfill the TECHNICAL SPECIFICATION above.
 
 <parent_code>
-  {{parent_code}}
+{{parent_code}}
 </parent_code>
 {% endif %}
 
@@ -550,54 +609,58 @@ from typing import Tuple, Any
 BASE_DATA_PATH = "{{task_data_path}}"
 OUTPUT_DATA_PATH = "{{output_data_path}}"
 
-# Type Definitions
-# Semantic type aliases for ML data structures (DataFrame, Series, ndarray, Tensor, etc.).
-# Replace with concrete types that best fit your implementation.
-# Feature matrix
-Features = Any       # <-Replace with actual type
-# Target labels
-Labels = Any         # <-Replace with actual type
+# Task-adaptive type definitions
+# These are abstract placeholders — you MUST replace `Any` with concrete types.
+# Choose types that best serve each role's purpose for THIS task.
+X = Any      # Feature matrix type
+y = Any      # Target vector type
 
-def create_features(
-    X_train: Features,
-    y_train: Labels,
-    X_val: Features,
-    y_val: Labels,
-    X_test: Features
-) -> Tuple[Features, Labels, Features, Labels, Features]:
+def preprocess(
+    X_train: X,
+    y_train: y,
+    X_val: X,
+    y_val: y,
+    X_test: X
+) -> Tuple[X, y, X, y, X]:
     \"\"\"
-    Creates features for a single fold of cross-validation.
-    
+    Transforms raw data into model-ready format for a single fold/split.
+
+    This function handles all data transformations required before model training:
+      - Encoding, scaling, imputation
+      - Feature engineering
+      - Data structure conversion
+
+    Critical: Fit all transformers on X_train ONLY, then apply to all sets.
+
     Args:
-        X_train (Features): The training set features.
-        y_train (Labels): The training set labels.
-        X_val (Features): The validation set features.
-        y_val (Labels): The validation set labels.
-        X_test (Features): The test set features.
-    
+        X_train (X): The training set features.
+        y_train (y): The training set targets.
+        X_val (X): The validation set features.
+        y_val (y): The validation set targets.
+        X_test (X): The test set features.
+
     Returns:
-        Tuple[Features, Labels, Features, Labels, Features]: A tuple containing the transformed data:
-            - X_train_transformed (Features): Transformed training features.
-            - y_train_transformed (Labels): Transformed training labels (usually unchanged).
-            - X_val_transformed (Features): Transformed validation features.
-            - y_val_transformed (Labels): Transformed validation labels (usually unchanged).
-            - X_test_transformed (Features): Transformed test set.
+        Tuple[X, y, X, y, X]: A tuple containing the transformed data:
+            - X_train_processed (X): Transformed training features.
+            - y_train_processed (y): Transformed training targets (may be unchanged).
+            - X_val_processed (X): Transformed validation features.
+            - y_val_processed (y): Transformed validation targets (may be unchanged).
+            - X_test_processed (X): Transformed test features.
+
     Requirements:
         - Return exactly 5 non-None values
-        - Row preservation: each transformed output must have the same number of samples as its corresponding input
-            * X_train_transformed ↔ X_train
-            * y_train_transformed ↔ y_train
-            * X_val_transformed ↔ X_val
-            * y_val_transformed ↔ y_val
-            * X_test_transformed ↔ X_test
-        - Column consistency: all transformed feature sets (X_train, X_val, X_test) must have identical feature columns
+        - Row alignment within each set:
+            * X_train_processed and y_train_processed must have the same number of samples
+            * X_val_processed and y_val_processed must have the same number of samples
+        - Column consistency: all transformed feature sets (train, val, test) must have identical structure
+        - Test completeness: X_test_processed must cover all unique identifiers from X_test — no sample may be dropped.
         - Output must contain NO NaN or Infinity values
         - Do not attempt fallback handling that could mask issues affecting output quality — let errors propagate
     \"\"\"
     # Step 1: Fit all transformations on training data only (avoid data leakage)
     # Step 2: Apply transformations to train, val, and test sets consistently
-    # Step 3: Validate output format (no NaN/Inf, consistent columns)
-    # Step 4: Return X_train_transformed, y_train_transformed, X_val_transformed, y_val_transformed, X_test_transformed
+    # Step 3: Validate output format (no NaN/Inf, consistent structure)
+    # Step 4: Return transformed data
     pass
 </python_code>
 
@@ -612,7 +675,16 @@ class TrainAndPredictPrompts:
     """Prompts for the 'train_and_predict' stage."""
     SYSTEM = """
 You are a world-class data scientist and machine learning engineer with deep expertise in Python and building predictive models.
-Your current task is to implement training functions for a machine learning competition.
+Your current task is to implement training functions for a machine learning task.
+
+## Pipeline Context
+This is a **task-agnostic** ML pipeline with the following stages:
+  load_data → get_splitter → preprocess → train_and_predict → ensemble → workflow
+
+**Current Stage**: `train_and_predict` (Stage 4 of 6)
+**Responsibility**: Train model(s) and generate predictions
+**Upstream**: `preprocess` (transformed data)
+**Downstream**: `ensemble`
 
 ## Hardware Context
 The following hardware resources are available.
@@ -620,9 +692,14 @@ The following hardware resources are available.
 {{hardware_info}}
 </hardware_info>
 
+Always operate efficiently within these resources:
+- **I/O Efficiency**: Minimize disk reads, use efficient formats, enable caching
+- **Optimize memory usage**: Use compact representations, avoid redundant copies, release resources promptly, and other memory optimizations
+- **Maximize utilization**: Leverage all available cores and devices in parallel where beneficial
+- **Avoid inefficiency**: Eliminate redundant computation, unnecessary data movement, sequential bottlenecks, and other performance anti-patterns
+
 ## Task File Context
 The following files are present in the directory `{{task_data_path}}`.
-Use these exact paths and file sizes to plan your code.
 <task_dir_structure>
 {{task_dir_structure}}
 </task_dir_structure>
@@ -637,7 +714,7 @@ Use these exact paths and file sizes to plan your code.
 {{eda_analysis}}
 </eda_analysis>
 
-## COMPONENT CONTEXT (Dependencies)
+## COMPONENT CONTEXT
 The following code blocks are the **IMMUTABLE** implementations of upstream pipeline components.
 Your implementation MUST be fully compatible with them — respect their data structures, return formats, and behaviors exactly.
 
@@ -647,42 +724,33 @@ File: load_data.py
 {{load_data_code}}
 </python_code>
 
---------- cross_validation function ---------
-File: cross_validation.py
+--------- get_splitter function ---------
+File: get_splitter.py
 <python_code>
-{{cross_validation_code}}
+{{get_splitter_code}}
 </python_code>
 
---------- create_features function ---------
-File: create_features.py
+--------- preprocess function ---------
+File: preprocess.py
 <python_code>
 {{feature_code}}
 </python_code>
 
-## EXECUTION CONTEXT
-Your generated code will be executed in two stages with different data scales:
-- **Validation stage**: Runs on a small sample to verify correctness
-- **Production stage**: Runs on the complete dataset
-
-**Critical requirement**: The function must use identical logic in both stages. You cannot add conditional branches based on data size to handle these scenarios separately.
-
-**Solution**: 
-- Write scale-agnostic code by deriving all size-dependent parameters from the actual data properties, rather than using hardcoded values.
-- Ensure all parameters satisfy the constraints required by the libraries you use.
-
-**When errors occur**: 
-- If caused by data scale limitations → make the parameter data-adaptive
-- If caused by code logic issues → fix the logic itself
-
 ## Guidelines
 {% if gpu_available %}
-0. A CUDA-enabled GPU is available - You MUST enable GPU acceleration wherever supported by the libraries you choose. Failure to utilize the available GPU is considered an error.
-   **GPU Parameter Reference**: LightGBM uses `device='cuda'` (NOT `'gpu'`); XGBoost uses `device='cuda'`; CatBoost uses `task_type='GPU'` (uppercase). Always verify exact parameter names from official documentation.
+0. GPU acceleration is mandatory — You MUST utilize ALL available GPUs ({{gpu_count}} detected).
+   - **GPU Parameter Reference**: LightGBM uses `device='cuda'` (NOT `'gpu'`); XGBoost uses `device='cuda'`; CatBoost uses `task_type='GPU'` (uppercase). 
+{% if gpu_count > 1 %}
+   - ALL {{gpu_count}} GPUs must be utilized — partial usage is failure.
+   - PyTorch with GPUs: MUST use distributed training (DDP, DeepSpeed, FSDP, or equivalent). using `DataParallel` will be considered failure.
+{% endif %}
 {% endif %}
 1. All file paths must be relative to: `{{task_data_path}}` for loading data, `{{output_data_path}}` for saving outputs.
-2. Your implementation must strictly adhere to the function signature provided in the user prompt.
-3. Return ONLY the Python code implementation.
-4. Any error that could affect output quality must propagate immediately rather than attempting fallback workarounds — this ensures errors can be diagnosed and fixed.
+2. Return ONLY the Python code implementation.
+3. Any error that could affect output quality must propagate immediately rather than attempting fallback workarounds — this ensures errors can be diagnosed and fixed.
+4. The TECHNICAL SPECIFICATION is your contract — implement every detail faithfully, no simplified substitutes or placeholders.
+5. When fixing errors, address the root cause — do not degrade quality to bypass the problem
+6. Use print() at appropriate points to track execution progress.
 """
     USER = """
 Implement training function(s) and register them in the PREDICTION_ENGINES dictionary.
@@ -695,19 +763,12 @@ Follow the following process strictly:
 
 Implement ONE new training function according to the plan below.
 
-<generate_plan>
-{% if train_plan %}
+<specification>
 {{train_plan}}
-{% else %}
-Implement a robust training function following these principles:
-- Select the algorithm best suited to the data type and task complexity
-- Configure hyperparameters to best performance
-- Ensure correct output format
-{% endif %}
-</generate_plan>
+</specification>
 
 {% if parent_code %}
-**Evolution Task:** Modify following parent code to achieve the requirements above. Preserve working logic that doesn't conflict with the change.
+**Evolution Task:** Evolve the following code to fulfill the TECHNICAL SPECIFICATION above.
 
 <parent_code>
 {{parent_code}}
@@ -749,29 +810,27 @@ from typing import Tuple, Any, Dict, Callable
 BASE_DATA_PATH = "{{task_data_path}}"
 OUTPUT_DATA_PATH = "{{output_data_path}}"
 
-# Type Definitions
-# Semantic type aliases for ML data structures (DataFrame, Series, ndarray, Tensor, etc.).
-# Replace with concrete types that best fit your implementation.
-# Feature matrix
-Features = Any       # <-Replace with actual type
-# Target labels
-Labels = Any         # <-Replace with actual type
-# Model predictions
-Predictions = Any    # <-Replace with actual type
+# Task-adaptive type definitions
+# These are abstract placeholders — you MUST replace `Any` with concrete types.
+# Choose types that best serve each role's purpose for THIS task.
+X = Any           # Feature matrix type
+y = Any           # Target vector type
+Predictions = Any # Model predictions type
 
-PredictionFunction = Callable[
-    [Features, Labels, Features, Labels, Features],
+# Model Function Type
+ModelFn = Callable[
+    [X, y, X, y, X],
     Tuple[Predictions, Predictions]
 ]
 
 # ===== Training Functions =====
 
 def train_your_model_name(
-    X_train: Features,
-    y_train: Labels,
-    X_val: Features,
-    y_val: Labels,
-    X_test: Features
+    X_train: X,
+    y_train: y,
+    X_val: X,
+    y_val: y,
+    X_test: X
 ) -> Tuple[Predictions, Predictions]:
     \"\"\"
     Trains a model and returns predictions for validation and test sets.
@@ -779,20 +838,21 @@ def train_your_model_name(
     This function is executed within a cross-validation loop.
 
     Args:
-        X_train (Features): Feature-engineered training set.
-        y_train (Labels): Training labels.
-        X_val (Features): Feature-engineered validation set.
-        y_val (Labels): Validation labels.
-        X_test (Features): Feature-engineered test set.
+        X_train (X): Preprocessed training features.
+        y_train (y): Training targets.
+        X_val (X): Preprocessed validation features.
+        y_val (y): Validation targets.
+        X_test (X): Preprocessed test features.
 
     Returns:
         Tuple[Predictions, Predictions]: A tuple containing:
-        - validation_predictions (Predictions): Predictions for X_val.
-        - test_predictions (Predictions): Predictions for X_test.
+        - val_preds (Predictions): Predictions for X_val.
+        - test_preds (Predictions): Predictions for X_test.
+
     Requirements:
         - Return exactly 2 non-None values
-        - validation_predictions must contain one prediction per sample in X_val
-        - test_predictions must contain one prediction per sample in X_test
+        - val_preds must be non-empty and correspond to X_val
+        - test_preds must be non-empty and correspond to X_test
         - Output must NOT contain NaN or Infinity values
         - Do not attempt fallback handling that could mask issues affecting output quality — let errors propagate
     \"\"\"
@@ -800,10 +860,10 @@ def train_your_model_name(
     # Step 2: Enable GPU acceleration if supported by the model
     # Step 3: Train on (X_train, y_train), optionally use (X_val, y_val) for early stopping
     # Step 4: Predict on X_val and X_test
-    # Step 5: Return (validation_predictions, test_predictions)
+    # Step 5: Return (val_preds, test_preds)
     pass
 
-{% if assemble_models %}    
+{% if assemble_models %}
 # Add legacy model functions here if integrating from Step 2
 # def train_legacy_model_1(...):
 #     ...
@@ -814,13 +874,13 @@ def train_your_model_name(
 # Key: Descriptive model name (e.g., "lgbm_tuned", "neural_net")
 # Value: The training function reference
 {% if assemble_models %}
-PREDICTION_ENGINES: Dict[str, PredictionFunction] = {
+PREDICTION_ENGINES: Dict[str, ModelFn] = {
     "<your_model_name>": train_<your_model_name>,  # ← Replace with your Step 1 function name
     # Add legacy models from Step 2 here (only if they don't conflict):
     # "legacy_model_1": train_legacy_model_1,
 }
 {% else %}
-PREDICTION_ENGINES: Dict[str, PredictionFunction] = {
+PREDICTION_ENGINES: Dict[str, ModelFn] = {
     "<your_model_name>": train_<your_model_name>,  # ← Replace with your Step 1 function name
 }
 {% endif %}
@@ -839,15 +899,29 @@ class EnsemblePrompts:
 You are a world-class data scientist and machine learning engineer with deep expertise in ensemble methods.
 Your current task is to implement a function that combines predictions from multiple models to generate a final, superior prediction.
 
+## Pipeline Context
+This is a **task-agnostic** ML pipeline with the following stages:
+    load_data → get_splitter → preprocess → train_and_predict → ensemble → workflow
+
+**Current Stage**: `ensemble` (Stage 5 of 6)
+**Responsibility**: Combine multiple model predictions into final output
+**Upstream**: `train_and_predict` (predictions from multiple models)
+**Downstream**: `workflow`
+
 ## Hardware Context
 The following hardware resources are available.
 <hardware_info>
 {{hardware_info}}
 </hardware_info>
 
+Always operate efficiently within these resources:
+- **I/O Efficiency**: Minimize disk reads, use efficient formats, enable caching
+- **Optimize memory usage**: Use compact representations, avoid redundant copies, release resources promptly, and other memory optimizations
+- **Maximize utilization**: Leverage all available cores and devices in parallel where beneficial
+- **Avoid inefficiency**: Eliminate redundant computation, unnecessary data movement, sequential bottlenecks, and other performance anti-patterns
+
 ## Task File Context
 The following files are present in the directory `{{task_data_path}}`.
-Use these exact paths and file sizes to plan your code.
 <task_dir_structure>
 {{task_dir_structure}}
 </task_dir_structure>
@@ -862,7 +936,7 @@ Use these exact paths and file sizes to plan your code.
 {{eda_analysis}}
 </eda_analysis>
 
-## COMPONENT CONTEXT (Dependencies)
+## COMPONENT CONTEXT
 The following code blocks are the **IMMUTABLE** implementations of upstream pipeline components.
 Your implementation MUST be fully compatible with them — respect their data structures, return formats, and behaviors exactly.
 
@@ -872,14 +946,14 @@ File: load_data.py
 {{load_data_code}}
 </python_code>
 
---------- cross_validation function ---------
-File: cross_validation.py
+--------- get_splitter function ---------
+File: get_splitter.py
 <python_code>
-{{cross_validation_code}}
+{{get_splitter_code}}
 </python_code>
 
---------- create_features function ---------
-File: create_features.py
+--------- preprocess function ---------
+File: preprocess.py
 <python_code>
 {{feature_code}}
 </python_code>
@@ -890,56 +964,28 @@ File: train_and_predict.py
 {{model_code}}
 </python_code>
 
-## EXECUTION CONTEXT
-Your generated code will be executed in two stages with different data scales:
-- **Validation stage**: Runs on a small sample to verify correctness
-- **Production stage**: Runs on the complete dataset
-
-**Critical requirement**: The function must use identical logic in both stages. You cannot add conditional branches based on data size to handle these scenarios separately.
-
-**Solution**: 
-- Write scale-agnostic code by deriving all size-dependent parameters from the actual data properties, rather than using hardcoded values.
-- Ensure all parameters satisfy the constraints required by the libraries you use.
-
-**When errors occur**: 
-- If caused by data scale limitations → make the parameter data-adaptive
-- If caused by code logic issues → fix the logic itself
-
 ## Guidelines
 {% if gpu_available %}
-0. A CUDA-enabled GPU is available - You MUST enable GPU acceleration wherever supported by the libraries you choose. Failure to utilize the available GPU is considered an error.
-   **GPU Parameter Reference**: LightGBM uses `device='cuda'` (NOT `'gpu'`); XGBoost uses `device='cuda'`; CatBoost uses `task_type='GPU'` (uppercase). Always verify exact parameter names from official documentation.
+0. GPU acceleration is mandatory — NEVER use CPU libraries when GPU alternatives perform better.
 {% endif %}
 1. All file paths must be relative to: `{{task_data_path}}` for loading data, `{{output_data_path}}` for saving outputs.
-2. Your implementation must strictly adhere to the function signature provided in the user prompt.
-3. The function should be robust enough to handle different numbers of input models.
-4. Return ONLY the Python code implementation.
-5. Any error that could affect output quality must propagate immediately rather than attempting fallback workarounds — this ensures errors can be diagnosed and fixed.
+2. Return ONLY the Python code implementation.
+3. Any error that could affect output quality must propagate immediately rather than attempting fallback workarounds — this ensures errors can be diagnosed and fixed.
+4. The TECHNICAL SPECIFICATION is your contract — implement every detail faithfully, no simplified substitutes or placeholders.
+5. When fixing errors, address the root cause — do not degrade quality to bypass the problem
+6. Use print() at appropriate points to track execution progress.
 """
     USER = """
 Implement the `ensemble` module to combine predictions from multiple models into a final robust output.
 
-## IMPLEMENTATION GUIDANCE
-{% if plan %}
+## TECHNICAL SPECIFICATION
+<specification>
 {{plan}}
-{% else %}
-Execute a robust, task-adaptive ensemble strategy. Do not blindly apply complex optimizations unless necessary.
-
-### 1. Universal Pre-requisite: Fold Aggregation
-- Problem: `all_test_preds` contains a list of predictions per model (one for each fold).
-- Action: Before combining models, you should aggregate the folds for each model into a single prediction vector.
-
-### 2. Adaptive Combination Strategy
-Analyze the `Task Description` and `IMPLEMENTATION GUIDANCE` to select the correct strategy, such as Statistical Averaging or Optimization-based Blending.
-
-### 3. Safety & Hygiene
-- Shape Alignment: Ensure the final output shape strictly matches the test set length.
-- Fail-Safe: If optimization fails (e.g., due to NaNs), fallback to Simple Average silently.
-{% endif %}
+</specification>
 
 {% if parent_code %}
-## PREVIOUS IMPLEMENTATION
-**Evolution Task:** Modify following parent code to achieve the requirements above. Preserve working logic that doesn't conflict with the change.
+## PARENT IMPLEMENTATION
+**Evolution Task:** Evolve the following code to fulfill the TECHNICAL SPECIFICATION above.
 
 <parent_code>
 {{parent_code}}
@@ -955,36 +1001,33 @@ from typing import Dict, List, Any
 BASE_DATA_PATH = "{{task_data_path}}"
 OUTPUT_DATA_PATH = "{{output_data_path}}"
 
-# Type Definitions
-# Semantic type aliases for ML data structures (DataFrame, Series, ndarray, Tensor, etc.).
-# Replace with concrete types that best fit your implementation.
-# Feature matrix
-Features = Any       # <-Replace with actual type
-# Target labels
-Labels = Any         # <-Replace with actual type
-# Model predictions
-Predictions = Any    # <-Replace with actual type
+# Task-adaptive type definitions
+# These are abstract placeholders — you MUST replace `Any` with concrete types.
+# Choose types that best serve each role's purpose for THIS task.
+y = Any           # Target vector type
+Predictions = Any # Model predictions type
 
 def ensemble(
-    all_oof_preds: Dict[str, Predictions],
+    all_val_preds: Dict[str, Predictions],
     all_test_preds: Dict[str, Predictions],
-    y_true_full: Labels
+    y_val: y,
 ) -> Predictions:
-      \"\"\"
+    \"\"\"
     Combines predictions from multiple models into a final output.
-    
+
     Args:
-        all_oof_preds (Dict[str, Predictions]): Dictionary mapping model names to their out-of-fold predictions.
+        all_val_preds (Dict[str, Predictions]): Dictionary mapping model names to their out-of-fold predictions.
         all_test_preds (Dict[str, Predictions]): Dictionary mapping model names to their aggregated test predictions.
-        y_true_full (Labels): Ground truth labels, available for evaluation and optimization.
+        y_val (y): Ground truth targets, available for evaluation and optimization.
+
     Returns:
         Predictions: Final test set predictions.
-        
+
     Requirements:
-      - Return a non-None value
-      - Output must have the same number of samples as each fold's test predictions
-      - Output must NOT contain NaN or Infinity values
-      - Do not attempt fallback handling that could mask issues affecting output quality — let errors propagate
+        - Return a non-None value
+        - Output must have the same number of samples as each model's test predictions
+        - Output must NOT contain NaN or Infinity values
+        - Do not attempt fallback handling that could mask issues affecting output quality — let errors propagate
     \"\"\"
     # Step 1: Evaluate individual model scores and prediction correlations
     # Step 2: Apply ensemble strategy
@@ -1003,8 +1046,17 @@ class WorkflowPrompts:
     """Prompts for the 'workflow' stage."""
     SYSTEM = """
 You are a world-class data scientist and machine learning engineer, and your current task is to act as a pipeline integrator.
-You will be given a set of Python functions, each responsible for a specific stage of a machine learning process (data loading, feature engineering, training, ensembling).
+You will be given a set of Python functions, each responsible for a specific stage of a machine learning process (data loading, preprocessing, training, ensembling).
 Your job is to write a single `workflow` function that correctly calls these functions in sequence to execute the full end-to-end pipeline and produce artifacts required by the task description.
+
+## Pipeline Context
+This is a **task-agnostic** ML pipeline with the following stages:
+  load_data → get_splitter → preprocess → train_and_predict → ensemble → workflow
+
+**Current Stage**: `workflow` (Stage 6 of 6)
+**Responsibility**: Orchestrate full pipeline and produce final deliverables
+**Upstream**: All previous stages
+**Downstream**: Final output files
 
 ## Hardware Context
 The following hardware resources are available.
@@ -1012,9 +1064,14 @@ The following hardware resources are available.
 {{hardware_info}}
 </hardware_info>
 
+Always operate efficiently within these resources:
+- **I/O Efficiency**: Minimize disk reads, use efficient formats, enable caching
+- **Optimize memory usage**: Use compact representations, avoid redundant copies, release resources promptly, and other memory optimizations
+- **Maximize utilization**: Leverage all available cores and devices in parallel where beneficial
+- **Avoid inefficiency**: Eliminate redundant computation, unnecessary data movement, sequential bottlenecks, and other performance anti-patterns
+
 ## Task File Context
 The following files are present in the directory `{{task_data_path}}`.
-Use these exact paths and file sizes to plan your code.
 <task_dir_structure>
 {{task_dir_structure}}
 </task_dir_structure>
@@ -1024,7 +1081,7 @@ Use these exact paths and file sizes to plan your code.
 {{task_description}}
 </task_description>
 
-## COMPONENT CONTEXT (Dependencies)
+## COMPONENT CONTEXT
 The following code blocks are the **IMMUTABLE** implementations of upstream pipeline components.
 Your implementation MUST be fully compatible with them — respect their data structures, return formats, and behaviors exactly.
 
@@ -1034,14 +1091,14 @@ File: load_data.py
 {{load_data_code}}
 </python_code>
 
---------- cross_validation function ---------
-File: cross_validation.py
+--------- get_splitter function ---------
+File: get_splitter.py
 <python_code>
-{{cross_validation_code}}
+{{get_splitter_code}}
 </python_code>
 
---------- create_features function ---------
-File: create_features.py
+--------- preprocess function ---------
+File: preprocess.py
 <python_code>
 {{feature_code}}
 </python_code>
@@ -1060,29 +1117,28 @@ File: ensemble.py
 
 ## Guidelines
 {% if gpu_available %}
-0. A CUDA-enabled GPU is available - You MUST enable GPU acceleration wherever supported by the libraries you choose. Failure to utilize the available GPU is considered an error.
-   **GPU Parameter Reference**: LightGBM uses `device='cuda'` (NOT `'gpu'`); XGBoost uses `device='cuda'`; CatBoost uses `task_type='GPU'` (uppercase). Always verify exact parameter names from official documentation.
+0. GPU acceleration is mandatory — NEVER use CPU libraries when GPU alternatives perform better.
 {% endif %}
 1. This workflow function will be executed in the production environment to generate final artifacts. It must process the COMPLETE dataset.
 2. All file paths must be relative to: `{{task_data_path}}` for loading data, `{{output_data_path}}` for saving outputs.
 3. Your task is ONLY to integrate the provided functions. Do NOT modify the logic within the component functions.
-4. Ensure you import all necessary functions from their respective (hypothetical) modules.
-5. Return ONLY the Python code implementation
-6. Any error that could affect output quality must propagate immediately rather than attempting fallback workarounds — this ensures errors can be diagnosed and fixed.
+4. Return ONLY the Python code implementation
+5. Any error that could affect output quality must propagate immediately rather than attempting fallback workarounds — this ensures errors can be diagnosed and fixed.
+6. The TECHNICAL SPECIFICATION is your contract — implement every detail faithfully, no simplified substitutes or placeholders.
+7. When fixing errors, address the root cause — do not degrade quality to bypass the problem
+8. Use print() at appropriate points to track execution progress.
 """
     USER = """
 Please implement the Python code for the 'workflow' stage by integrating the functions provided in system prompt.
 
-## IMPLEMENTATION GUIDANCE
-{% if plan %}
+## TECHNICAL SPECIFICATION
+<specification>
 {{plan}}
-{% else %}
-Execute a robust workflow pipeline.
-{% endif %}
+</specification>
 
 {% if parent_code %}
-## PREVIOUS IMPLEMENTATION
-**Evolution Task:** Modify following parent code to achieve the requirements above. Preserve working logic that doesn't conflict with the change.
+## PARENT IMPLEMENTATION
+**Evolution Task:** Evolve the following code to fulfill the TECHNICAL SPECIFICATION above.
 
 <parent_code>
 {{parent_code}}
@@ -1093,41 +1149,42 @@ Execute a robust workflow pipeline.
 Your code must implement the following `workflow` function:
 
 <python_code>
-# Assume all component functions are available for import
+# import all component functions
 from load_data import load_data
-from create_features import create_features
-from cross_validation import cross_validation
+from preprocess import preprocess
+from get_splitter import get_splitter
 from train_and_predict import PREDICTION_ENGINES
 from ensemble import ensemble
 
 BASE_DATA_PATH = "{{task_data_path}}"
 OUTPUT_DATA_PATH = "{{output_data_path}}"
 
-def workflow()->dict:
+def workflow() -> dict:
     \"\"\"
     Orchestrates the complete end-to-end machine learning pipeline in production mode.
-    
-    This function integrates all pipeline components (data loading, feature engineering, 
-    cross-validation, model training, and ensembling) to generate final deliverables 
+
+    This function integrates all pipeline components (data loading, preprocessing, 
+    data splitting, model training, and ensembling) to generate final deliverables 
     specified in the task description.
-    
+
     **IMPORTANT: This executes the PRODUCTION pipeline with the COMPLETE dataset.**
+
     Returns:
         dict: A dictionary containing all task deliverables.
               Required keys:
               - 'submission_file_path': Path to the final submission CSV
-              - 'model_scores': Dict mapping model names to CV scores
               - 'prediction_stats': Prediction distribution statistics (see format below)
-              
+
               Optional keys:
               - Additional task-specific metrics or file paths
-    
+
     Requirements:
         - **MUST call `load_data(validation_mode=False)` to load the full dataset**
+        - Submission format must strictly follow the required format
         - Return value must be JSON-serializable (primitive types, lists, dicts only)
         - Save any non-serializable objects (models, arrays, DataFrames) to files under `{{output_data_path}}`
         - Do not attempt fallback handling that could mask issues affecting output quality — let errors propagate
-        
+
     prediction_stats Format:
         {
             "oof": {                    # Out-of-Fold prediction statistics
@@ -1146,22 +1203,21 @@ def workflow()->dict:
     \"\"\"
     # Your implementation goes here.
     # 1. Load full dataset with load_data(validation_mode=False)
-    # 2. Set up cross-validation strategy
+    # 2. Set up data splitting strategy with get_splitter()
     # 3. For each fold:
     #      a. Split train/validation data
-    #      b. Apply create_features() to this fold
-    #      c. Train each model and collect OOF + test predictions
+    #      b. Apply preprocess() to this fold
+    #      c. Train each model and collect val + test predictions
     # 4. Ensemble predictions from all models
     # 5. Compute prediction statistics
     # 6. Generate deliverables (submission file, scores, etc.)
     # 7. Save artifacts to files and return paths in a JSON-serializable dict
-    # Example implementation for a task:
+
     output_info = {
         "submission_file_path": "path/to/submission.csv",
-        "model_scores": {"model_name": 0.85},
         "prediction_stats": {
-            "oof": {"mean": float(xx), "std": float(xx), "min":float(xx), "max":float(xx)},
-            "test": {"mean": float(xx), "std": float(xx), "min":float(xx), "max":float(xx)},
+            "oof": {"mean": float(xx), "std": float(xx), "min": float(xx), "max": float(xx)},
+            "test": {"mean": float(xx), "std": float(xx), "min": float(xx), "max": float(xx)},
         },
     }
     return output_info
@@ -1177,16 +1233,29 @@ Your response must start with <python_code> and end with </python_code>.
 class PackageInstallerPrompts:
     """Prompts for package installer"""
     USER = """
-You are an expert package installer.
-Your task is to provide the package installation command based on the error message.
+You are an expert Python package installer.
 
-# Error Message
+## Task
+Based on the error message, determine the actual pip package name to install.
+Note: Module name may differ from package name (e.g., cv2 -> opencv-python, PIL -> Pillow, sklearn -> scikit-learn).
+
+## Requirements
+1. Output a SINGLE line bash command
+2. If package is already installed: print its name and version
+3. If package is not installed: install it directly
+4. Do NOT include any explanation, only the command
+
+## Error Message
 {error_msg}
 
-# Language
-{language}
-
+## Output Format
 ```bash
-# The package installation command is here.
+pip show <package_name> 2>/dev/null | grep -E "^(Name|Version):" || pip install <package_name>
 ```
+```
+
+## Examples
+- Error "No module named 'cv2'" -> pip show opencv-python 2>/dev/null | grep -E "^(Name|Version):" || pip install opencv-python
+- Error "No module named 'PIL'" -> pip show Pillow 2>/dev/null | grep -E "^(Name|Version):" || pip install Pillow
+- Error "No module named 'sklearn'" -> pip show scikit-learn 2>/dev/null | grep -E "^(Name|Version):" || pip install scikit-learn
 """

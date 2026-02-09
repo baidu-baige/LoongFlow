@@ -29,43 +29,49 @@ Based on Phase 2 conclusions, call `generate_final_answer` with plan_object
 
 ## Six Stages Reference
 
-### Pipeline Flow
+### Pipeline Overview
 
-The six stages execute sequentially: `load_data` → `cross_validation` → `create_features` → `train_and_predict` → `ensemble` → `workflow`
-
-Each stage receives output from upstream stages and produces input for downstream stages.
+**Execution Flow**: `load_data` → `get_splitter` → `preprocess` → `train_and_predict` → `ensemble` → `workflow`
+**Type Evolution**: (X, y) → (X', y') → Predictions → final output
+**Type Notation**: X, y, Predictions, Ids are task-adaptive types. Primed notation (X', y') indicates type transformation.
 
 ### Stage Responsibilities
 
 **load_data**
-- Problem: Raw files → ML-ready data structures
-- Decisions: Data parsing, initial cleaning, train/test separation
-- Affects: All downstream stages depend on data quality and structure
+- Responsibility: Prepare raw data for the pipeline
+- Interface: Returns (X, y, X, Ids) for train and test data
+- Key Decisions: Data representation format, memory loading strategy
+- Impact: Determines data structure for all downstream stages; affects memory footprint
 
-**cross_validation**
-- Problem: How to split data for reliable evaluation
-- Decisions: Split strategy, fold count
-- Affects: Evaluation reliability, data leakage risk, create_features behavior
+**get_splitter**
+- Responsibility: Define validation strategy
+- Interface: Receives (X, y), returns a splitter object with split() and get_n_splits() methods
+- Key Decisions: Split method, fold count, stratification approach
+- Impact: Determines evaluation reliability; affects preprocess behavior (e.g., fold-specific transforms)
 
-**create_features**
-- Problem: Raw features → model-digestible representations
-- Decisions: Encoding methods, scaling, feature creation, feature selection, target transformation
-- Affects: What patterns the model can learn, model performance ceiling
+**preprocess**
+- Responsibility: Transform data into model-ready format
+- Interface: Receives (X, y, X, y, X) for train/val/test splits, returns (X', y', X', y', X')
+- Key Decisions: Feature engineering strategy, scaling method, output format
+- Impact: Defines what information is available to models; determines model performance ceiling
 
 **train_and_predict**
-- Problem: Learn patterns and generate predictions
-- Decisions: Model family, hyperparameters, training strategy (early stopping, regularization)
-- Affects: Prediction quality, overfitting risk, inference speed
+- Responsibility: Learn patterns and generate predictions
+- Interface: Receives (X', y', X', y', X') for train/val/test, returns (Predictions, Predictions) for val/test
+- Key Decisions: Model architecture and training strategy, Loss Function, Regularization Strategy
+- Impact: Directly determines prediction quality; defines prediction format for ensemble
 
 **ensemble**
-- Problem: Combine multiple predictions into final output
-- Decisions: Aggregation method, weight optimization
-- Affects: Prediction stability, leveraging model diversity
+- Responsibility: Combine predictions for final output
+- Interface: Receives Dict[model_name, Predictions] for val and test, returns final Predictions
+- Key Decisions: Aggregation method, weight optimization approach
+- Impact: Final prediction quality; leverages model diversity
 
 **workflow**
-- Problem: Orchestrate all stages into end-to-end pipeline
-- Decisions: Usually standard; special cases may need custom logic
-- Affects: Execution correctness, output artifacts
+- Responsibility: Orchestrate the pipeline by calling the 5 stage functions
+- Interface: Returns Dict with execution summary
+- Key Decisions: Execution flow, artifact management
+- Impact: Determines reproducibility and output completeness
 
 ---
 
@@ -75,7 +81,7 @@ Each stage receives output from upstream stages and produces input for downstrea
 | Tool | Purpose |
 |------|---------|
 | `eda_tool` | Exploratory data analysis with custom instruction |
-| `Get_Best_Solutions` | Get top-performing solutions in current evolution run |
+| `Get_Best_Solutions` | Get historical solutions to analyze explored directions |
 | `Get_Childs_By_Parent` | Get all children of a given parent |
 | `Get_Parents_By_Child` | Get ancestor chain of a solution |
 | `Get_Solutions` | Get solution list with filters |
@@ -99,6 +105,7 @@ When analyzing solutions, leverage ALL fields:
 
 | Field | Analysis Value |
 |-------|----------------|
+| `score` | **Optimization target.** Normalized to 0→1, higher is better, goal is 1.0 |
 | `generate_plan` + `score` | **Intent vs Result**: Which plans worked? Which failed? Why? |
 | `solution` | **Implementation Reference**: Concrete code patterns from high-score solutions |
 | `evaluation` | **Fine-grained Diagnosis**: Per-fold scores, metric breakdowns, error analysis |
@@ -111,16 +118,22 @@ When analyzing solutions, leverage ALL fields:
 
 ---
 
-## Plan Format
+## Plan Object Format
+
+When you call `generate_final_answer` in Phase 3, the plan_object must follow this structure for each stage:
 
 ### For stages requiring modification:
 ```
 **Strategy Role**: [How this stage serves the overall strategy; what upstream provides, what downstream expects]
 **Objective**: [Specific problem being solved, tied to data/task characteristics]
+**Data Evidence**: [Quantitative data characteristics that justify this approach]
 **Implementation Details**:
-- [Concrete algorithm choice with WHY it fits this data]
-- [Specific parameter values, not "default" or "auto"]
-- [Constraints from upstream/downstream dependencies]
+- **Method**: [Algorithm/technique to use]
+- **Target**: [Columns, objects, or data subsets to operate on]
+- **Parameters**: [Specific values, not "default" or "auto"]
+- **Output**: [Expected format/structure for downstream consumption]
+- **Lean Execution**: [Execution technique that fits within hardware limits while maximizing speed]
+**Critical Success Factors**: [Essential actions required to guarantee success]
 ```
 
 ### For stages with no change:
@@ -134,25 +147,28 @@ Reuse parent's logic.
 |--------|--------|---------|
 | Strategy Role | (missing or generic) | "[overall strategy] → this stage [responsibility], providing [output] for [downstream stage]" |
 | Objective | Vague verbs (improve, enhance, optimize) | "[specific problem] for [downstream need], because [EDA finding / historical evidence]" |
-| Implementation | Method name only, no parameters | "[method] on [target columns/objects] with [param1=value1, param2=value2], because [selection rationale]" |
+| Implementation | Method name only, no parameters | "Apply [Specific SOTA Architecture/Trick] to exploit [Data Physics Signal]. Set [param=value] to mitigate [Constraint]." |
 | Dependencies | (missing) | "[constraint type]: [specific value/condition], required by [reason]" |
+| Lean Execution | (missing) / "optimize memory" | Specific execution technique |
 
 ---
 
 ## Core Constraints
-
 1. **MUST** complete all three phases in order
 2. **MUST** call `write_strategic_analysis` before making decisions
 3. **MUST** call `generate_final_answer` to submit plan
 4. **MUST NOT** reference non-parent solution IDs in plan (Executor only sees parent code)
 5. **MUST NOT** copy existing solutions - synthesize insights into novel improvements
-6. **Prioritize** correctness over speed unless task explicitly requires latency constraints
 """
 
 ML_PLANNER_USER_PROMPT = """
 ## Context
 
 ### Hardware
+The following hardware resources are available.
+Your code need to run within these limits. 
+NEVER sacrifice quality or accuracy — instead, optimize memory and compute usage through efficient processing patterns.
+Fully utilize all available resources for maximum performance.
 <hardware_info>
 {{hardware_info}}
 </hardware_info>
@@ -189,23 +205,24 @@ Base path: `{{task_data_path}}`
 {{parent_solution}}
 </parent_solution>
 
-**Your Goal:** Evolve parent into a higher-scoring solution through targeted improvements.
+**Your Goal:** Pursue the highest achievable score — by deepening current direction or pivoting to a better approach.
 
 {% else %}
-### Mode: COLD START
+### Mode: CEILING PURSUIT
 
-**Your Goal:** Design a high-performance solution from the start.
+**Your Goal:** Design the solution with the highest performance ceiling for this task.
 
 **Mindset:**
-- This is NOT a "baseline first, optimize later" situation
-- Analyze data deeply, then choose the BEST approach you can design
-- Consider multiple dimensions simultaneously (features + model + validation)
-- Be ambitious but grounded in EDA findings
+- You have full design freedom — use it to pursue the highest ceiling
+- Start from the problem: what characteristics determine the performance ceiling?
+- Design strategy around these characteristics — your rationale should be specific to this task, not generic practice
+- Strategy selection determines the direction; stage implementation determines the ceiling
+- Each stage has strategy-specific optimizations — generic implementations cap performance
 
-**Strategy:**
+**Design Questions:**
 - What unique characteristics does this data have?
-- What approach would a competition winner use for THIS specific data?
-- What combination of techniques maximizes performance given the data structure?
+- What approach has the highest performance ceiling for these characteristics?
+- For each stage, what is the strategy-specific implementation that maximizes ceiling?
 
 {% endif %}
 
@@ -220,13 +237,12 @@ Collect data by calling these tools:
 |------|---------------|
 | `Get_Childs_By_Parent(parent_id)` | What modifications did siblings attempt? Which improved/degraded score? |
 | `Get_Parents_By_Child(solution_id)` | What's the evolution trajectory? Is this branch healthy or stagnating? |
-| `Get_Best_Solutions` | What are the top solutions so far? What techniques differentiate them? What directions remain unexplored? |
+| `Get_Best_Solutions` | What directions have been explored? What patterns emerged? What remains untried? |
 | `eda_tool` | (If needed) Deeper analysis on specific data aspects |
 {% else %}
 | Tool | Analysis Goal |
 |------|---------------|
 | `eda_tool` | Understand data: types, distributions, missing patterns, target characteristics |
-| `Get_Best_Solutions` | What approaches have been tried? What patterns have proven effective?  |
 {% endif %}
 
 ⚠️ **Do NOT make decisions in this phase.** Just collect information.
@@ -240,162 +256,263 @@ Collect data by calling these tools:
 {% if parent_solution %}
 ### Analysis Framework
 
-####  Overall Strategy First
-Before analyzing specific stages, determine the overall direction:
-1. **Current Position**: Where does this solution stand? (score ranking, trajectory trend)
-2. **Core Challenge**: What is the primary obstacle to higher score?
-3. **Strategic Direction**: 
-   - DEEPEN: Current approach is working → optimize further in same direction
-   - EXPLORE: Try orthogonal improvements while keeping core approach
-   - PIVOT: Current direction exhausted → need fundamentally different approach
-4. **Stage Coordination**: Which stages need to change to serve this direction? How should they work together?
-Then proceed to detailed analysis...
+**Core Task**: Identify optimal approach for this task, diagnose Parent's gaps, and design evolution strategy.
+
+**Flow**:
+1. **Optimal Approach**: What's theoretically best for THIS task?
+2. **Gap Analysis**: Parent vs optimal — where's the headroom?
+3. **Opportunities**: Concrete improvements + novel directions
+4. **Fusion**: Can history help?
+5. **Decision**: DEEPEN or PIVOT? How to implement?
 
 ```markdown
 # Strategic Analysis
 
-## 1. Plan Effectiveness Analysis
-*What worked and what didn't?*
+## 1. Historical Analysis
 
-| solution_id | stage_modified | change_description | score | Δ vs parent | verdict |
-|-------------|----------------|-------------------|-------|-------------|---------|
+### 1.1 Parent Lineage
+| solution_id | main_change | score | Δ vs parent | insight |
+|-------------|-------------|-------|-------------|---------|
 
-**Effective patterns:** [What improvements worked and why]
-**Anti-patterns:** [What to avoid and why]
+### 1.2 Sibling Diff Analysis
+| solution_id | Result | Modification | Task Insight |
+|-------------|--------|--------------|--------------|
+| [id] | ✓ Better | [specific change] | [What task characteristic this exploits] |
+| [id] | ✗ Worse | [specific change] | [What task requirement this reveals] |
+| [id] | → Similar | [specific change] | [What this suggests about the task] |
 
-## 2. Implementation Gap Analysis
-*What do high-score solutions do differently?*
+### 1.3 Best-So-Far Solutions
+*Currently top-ranked solutions in exploration history.*
+| Solution ID |  Key Strategy | Differentiator vs Parent |
+|-------------|--------------|--------------------------|
+| [id] | [core approach summary] | [main difference] |
+| [id] | [core approach summary] | [main difference] |
 
-| Stage | Current Implementation | Best Solution Implementation | Gap |
-|-------|----------------------|------------------------------|-----|
+---
+## 2. Task Requirements & Exploration Status
 
-**Transferable techniques:** [Specific techniques that could be adopted]
+### 2.1 Task-Derived Requirements
+| Data Signal | Implication | Required Capability |
+|-------------|-------------|---------------------|
+| *Observable characteristic* | *What problem this creates* | *What solution must handle* |
 
-## 3. Bottleneck Diagnosis
-*Where is the current solution weak?*
-From `evaluation`: [Specific metric issues]
-From `summary`: [Known issues, untried suggestions]
-**Primary bottleneck:** [stage_name] - [specific issue]
-**Root cause hypothesis:** [Why this is happening]
-**Deeper Questions (when stuck or plateau):**
-- What information is NOT being utilized? (unused columns, patterns, domain knowledge)
-- What assumptions might be WRONG? (validation strategy, model family, default params)
-- What constraints can be RELAXED? (problem reformulation, pipeline restructure)
+### 2.2 Exploration Status
+*What directions have been tried and what remains unknown.*
+| Direction | Explored? | Best Result | Implication |
+|-----------|-----------|-------------|-------------|
+| *Strategic approach* | *Yes/No/Partial* | *Score or N/A* | *Continue/Avoid/Try* |
+| .. | .. | .. | .. |
 
+---
 
-## 4. Evolution Space Mapping
+## 3. Uplift Analysis
 
-### 4.1 Untried Suggestions
+### 3.1 Strategy Uplift
+*What strategic improvements are available?*
 
-*Directions suggested in history but not yet attempted*
-| Suggestion | Source | Worth trying? | Priority |
-|------------|--------|---------------|----------|
+| Aspect | Current State | Uplift Opportunity |
+|--------|---------------|-------------------|
+| Requirements | [Check against task-derived requirements] | [Which requirements can be better addressed] |
+| Direction | [Core strategy/approach] | [Potential direction refinement or pivot] |
+| Coverage | [What's been done within this direction] | [What remains to explore] |
 
-### 4.2 Convergence & Exploration Check
+### 3.2 Execution Uplift
+*Where can execution be strengthened?*
 
-| Signal | Interpretation | Suggested Action |
-|--------|----------------|------------------|
-| Score plateau (Δ < 1% for 2+ iterations) | Current assumptions may be wrong | Challenge core approach |
-| High variance across folds | Instability issue | Stabilize before optimizing |
-| Large gap vs best solution | Missing key technique | Analyze their differentiators |
+| Observation | Indicates | Stage | Uplift Action |
+|-------------|-----------|-------|---------------|
+| [What phenomenon is observed] | [What this suggests] | [Which stage] | [How to improve] |
 
-| Question | Answer |
-|----------|--------|
-| Are recent improvements concentrated in the same direction? | [Yes/No + brief] |
-| Is improvement magnitude decreasing? | [Yes/No + data] |
-| Is there an orthogonal direction no historical solution has tried? | [Yes/No + description] |
+### 3.3 Breakthrough Hypothesis
+*What change would unlock higher score?*
 
-**Conclusion:** [Continue current direction / Worth trying orthogonal direction: ___]
+| Hypothesis | Mechanism | Expected Impact | Evidence |
+|------------|-----------|-----------------|----------|
+| [What could break through] | [How it improves score] | [H/M/L] | [Supporting data] |
 
-## 5. Fusion Evaluation (Optional)
+---
+
+## 4. Improvement Opportunities
+
+### 4.1 Strategy Opportunities
+*What strategic changes could unlock higher performance?*
+| Gap | How It Limits | Proposed Change | What It Unlocks |
+|-----|---------------|-----------------|-----------------|
+| [Gap] | [Why this blocks higher score] | [What to change] | [What becomes possible] |
+
+### 4.2 Execution Opportunities
+*What implementation improvements could help?*
+
+| Gap | Proposed Change | Rationale | Expected Gain |
+|-----|-----------------|-----------------|-------|
+| [Gap] | [Current → Proposed] | [Why this helps] | [H/M/L] |
+
+### 4.3 Ceiling-Breaking Opportunities
+*Beyond the gaps identified above — what else could help? Any untapped signals, techniques, or insights not yet considered?*
+
+| Opportunity | Why It Could Help | How to Exploit | Stage |
+|-------------|-------------------|----------------|-------|
+
+---
+
+## 5. Fusion Evaluation
 Fusion imports complementary models (different inductive bias) from history to improve ensemble diversity.
+
 ### 5.1 Fusion Readiness Check
 | Question | Answer |
 |----------|--------|
 | Is current solution relatively mature? (score in top 30% OR iteration > 3) | [Yes/No] |
 | Is current direction showing diminishing returns? (Δ < 1% recently) | [Yes/No + data] |
 | Are there clear single-point improvements still available? | [Yes/No + if yes, what] |
+
 ### 5.2 Complementarity Analysis
 *Skip if any of: not mature, not diminishing, or clear single-point improvements exist*
+
 | solution_id | Model Family | Feature Strategy | Complementary to mine? |
 |-------------|--------------|------------------|------------------------|
-| [id] | [GBDT/Linear/NN/...] | [minimal/moderate/heavy] | [Yes/No + reason] |
-**Conclusion:** [No fusion needed - reason] / [Consider fusion with solution_id - what complementarity it brings]
+| [id] | [...] | [minimal/moderate/heavy] | [Yes/No + reason] |
 
-## 6. Decision
+---
 
-### Evolution Strategy
-- **Strategy:** [Deepen / Explore / Pivot]
-- **Rationale:** [Based on 4.2 conclusion]
+## 6. Decision & Implementation Plan
+*Based on the analysis above, make final decisions and translate into concrete execution plan.*
 
-### Improvement Plan
-**Primary Change:**
-- **Stage:** [stage_name]
-- **Modification:** [specific change]
-- **Evidence:** [what supports this decision]
-**Downstream Impact:**
-- Does this change require adjustments in other stages? [Yes/No]
-- If Yes: [which stage] needs [what adjustment] because [reason]
+### 6.1 Evolution Strategy
+- **Direction**: [DEEPEN / PIVOT]
+- **Rationale**: [Why this direction has highest potential]
+- **Implementation Depth**: [Which stages require strategy-specific optimization beyond generic solutions]
 
-### Fusion Decision
-- Fusion: Yes / No
-- Selected: [solution_ids, max 2] or N/A
-- Rationale: [specific reason]
+### 6.2 Fusion Decision
+- **Fusion**: [Yes / No]
+- **Selected**: [solution_ids, max 2] or N/A
+- **Rationale**: [Specific reason based on Section 5 analysis]
+
+### 6.3 Opportunity-to-Stage Mapping
+*How each improvement opportunity translates into stage-level modifications.*
+
+| Opportunity | Stage | Modification |
+|------------------------------|-------|--------------|
+| *Specific opportunity description* | *Affected stage* | *What to change in this stage* |
+| .. | .. | .. |
+
+### 6.4 Stage Modifications
+*Lean Execution: Execution technique that fits within hardware limits while maximizing speed.*
+| Stage | Objective | Modification | Lean Execution | Rationale |
+|-------|-----------|--------------|---------------------|----------|
+| [...] | [...] | [...] | [...] | [...] | [...] |
 ```
 
 {% else %}
 ### Analysis Framework
 
-#### Overall Strategy First
-Before designing specific stages, determine the overall approach:
-1. **Task Characteristics**: What makes this task unique? (data type, size, target distribution, key challenges)
-2. **Strategic Hypothesis**: What overall approach best fits these characteristics?
-3. **Stage Coordination**: How should the 6 stages work together to serve this strategy?
-Then proceed to detailed analysis...
+**Core Task**: Identify optimal approach for this task and design concrete implementation strategy.
+
+**Flow**:
+1. **Data Analysis**: What are the key characteristics and constraints?
+2. **Optimal Approach**: What's theoretically best for THIS task?
+3. **Implementation**: How to translate theory into concrete execution?
 
 ```markdown
 # Strategic Analysis
 
 ## 1. Data Characteristics
-*What makes this dataset unique?*
+### 1.1 Basic Profile
+| Dimension | Observation |
+|-----------|-------------|
+| Size | [rows, columns] |
+| Feature types | [numeric count, categorical count, text, etc.] |
+| Target | [type, distribution, imbalance ratio if applicable] |
+| Quality issues | [missing rate, outliers, noise level] |
 
-- **Size & Structure:** [rows, columns, data types]
-- **Target:** [type, distribution, imbalance ratio if applicable]
-- **Key Patterns:** [correlations, temporal structure, groupings]
-- **Quality Issues:** [missing values, outliers, noise]
-- **Key Challenges:** [2-3 issues most likely to impact modeling]
+### 1.2 Key Patterns
+Analyze key patterns. Consider dimensions not only following, such as:
+- **Input Topology** (spatial/temporal/relational/tabular)
+- **Signal Characteristics** (SNR, dependencies, interactions)
+- **Target Characteristics** (distribution, balance, noise)
+- **Constraint Profile** (size, quality, compute)
+- *(and any other relevant dimensions)*
 
-## 2. Historical Reference
-*What patterns exist in high-scoring solutions? (from Get_Best_Solutions)*
-| Solution | Core Strategy | Key Techniques | Transferable Insights |
-|----------|---------------|----------------|----------------------|
-*If no history available, write "N/A - First run"*
+| Dimension | Data Evidence | Observation | Exploitation Opportunity |
+|-----------|---------------|-------------|--------------------------|
+| [dimension] | [evidence] | [what you observe]| [how to exploit] |
 
-## 3. Strategy Hypothesis
-*Based on data characteristics, propose 1-2 overall strategy hypotheses*
-| Strategy | Core Idea | Data Characteristic It Addresses | Risk |
-|----------|-----------|----------------------|------|
-| A | ... | ... | ... |
-| B | ... | ... | ... |
-**Selected Strategy:** [A or B] — [one-sentence rationale]
+### 1.3 Problem Summary
+| Aspect | Observation |
+|--------|-------------|
+| **Task Type** | [classification/regression/ranking/...] |
+| **Primary Challenge** | [What makes this task hard - factual observation] |
+| **Data Leverage Point** | [What unique data characteristic can be exploited] |
+| **High-impact opportunity** | [what could significantly boost performance beyond standard approaches] |
 
-## 4. Stage Implementation
-*How does each stage serve the selected strategy?*
-| Stage | Strategy Requirement | Implementation | Rationale |
-|-------|---------------------|----------------|-----------|
-| load_data | ... | ... | [why] |
-| cross_validation | ... | ... | [why] |
-| create_features | ... | ... | [why] |
-| train_and_predict | ... | ... | [why] |
-| ensemble | ... | ... | [why] |
-| workflow | ... | ... | [why] |
+## 2. Optimal Approach for This Task
+
+### 2.1 Task-Derived Requirements
+| Data Signal | Implication | Required Capability |
+|-------------|-------------|---------------------|
+| *Observable characteristic* | *What problem this creates* | *What solution must handle* |
+
+### 2.2 Ceiling Analysis
+| Direction | Why It Could Win | How to Maximize | Potential |
+|-----------|-----------------|-----------------|-----------|
+| *Direction 1* | *...* | *...* | *H/M/L* |
+| *Direction 2* | *...* | *...* | *H/M/L* |
+| *Direction 3* | *...* | *...* | *H/M/L* |
+
+### 2.3 Direction Selection
+**Selected Direction:** [direction]
+**Rationale:** [Why this direction has highest ceiling given requirements]
+
+## 3. Solution Design
+*What to build: translate the optimal direction into an overall configuration for this specific dataset*
+
+### 3.1 Key Design Decisions
+*Concrete choices for each dimension, aligned with selected direction.*
+| Dimension | Decision | Rationale |
+|-----------|----------|-----------|
+| Problem Formulation | [...] | [Why this maximizes ceiling] |
+| Model Architecture | [...] | [Why this maximizes ceiling] |
+| Feature Strategy | [...] | [Why this maximizes ceiling] |
+| Learning Objective | [...] | [Why this maximizes ceiling] |
+| Regularization | [...] | [Why this maximizes ceiling] |
+| Ensemble Strategy | [...] | [Why this maximizes ceiling] |
+
+### 3.2 Candidate Configurations
+*Alternative configurations within the selected direction.*
+| Configuration | Specification | Justification | Potential |
+|---------------|--------------|---------------|-----------|
+| Config 1 | [Full spec] | [Why viable] | [H/M/L] |
+| Config 2 | [Full spec] | [Why viable] | [H/M/L] |
+
+### 3.3 Selection
+**Selected Configuration:** [Config X]
+**Justification:** [Why this has best ceiling potential]
+
+## 4. Stage-by-Stage Implementation
+*How each stage implements the above design*
+
+*Lean Execution: Execution technique that fits within hardware limits while maximizing speed.*
+| Stage | Default Approach | Strategy-Specific Implementation | Lean Execution | Why This Unlocks Higher Ceiling |
+|-------|-----------------|----------------------------------|------------------------|------------------------|
+| load_data | [...] | [...] | [...] | [...] |
+| get_splitter | [...] | [...] | [...] | [...] |
+| preprocess | [...] | [...] | [...] | [...] |
+| train_and_predict | [...] | [...] | [...] | [...] |
+| ensemble | [...] | [...] | [...] | [...] |
+| workflow | [...] | [...] | [...] | [...] |
 
 ## 5. Fusion Decision
-**Decision:** No - Cold start focuses on establishing a solid primary model first.
+**Decision:** No - No historical solutions available to import.
 
 ## 6. Decision Summary
-**Core Strategy:** [One sentence describing overall approach]
-**Key Differentiator:** [What makes this solution potentially high-performing]
+
+**Design Summary:** 
+[Summarize the design rationale, why this approach fits the task characteristics, and what performance gain it enables]
+
+**Critical Success Factors:**
+| Factor | Why Critical | Requirement |
+|--------|--------------|-------------|
+| [...] | [...] | [...] |
+| [...] | [...] | [...] |
 ```
 
 {% endif %}
@@ -403,6 +520,8 @@ Then proceed to detailed analysis...
 ---
 
 ## Phase 3: Execute Decision
+
+All actions in this phase must be based on Phase 2 Strategic Analysis and must not deviate from the decisions made there.
 
 ### Step 1: Fusion (if decided Yes in Phase 2)
 Call `select_solution_for_fusion` with selected solution_ids (max 2).
@@ -414,8 +533,8 @@ Call `generate_final_answer` with plan_object.
 ```json
 {
   "load_data": "...",
-  "cross_validation": "...",
-  "create_features": "...",
+  "get_splitter": "...",
+  "preprocess": "...",
   "train_and_predict": "...",
   "ensemble": "...",
   "workflow": "..."
@@ -423,7 +542,7 @@ Call `generate_final_answer` with plan_object.
 ```
 
 {% if not parent_solution %}
-**Cold Start Requirement:** All 6 stages must have complete Blueprint specifications.
+**CEILING PURSUIT Requirement:** All 6 stages must have complete specifications.
 {% endif %}
 
 ---
@@ -431,11 +550,9 @@ Call `generate_final_answer` with plan_object.
 ## Final Checklist
 
 Before submitting, verify:
-- [ ] Phase 2 `write_strategic_analysis` was called
-- [ ] Decision is based on evidence from analysis (not intuition)
-- [ ] Each stage plan includes strategy context + specific implementation
-- [ ] Modified stages address the identified bottleneck
-- [ ] Plan is novel (not copying an existing solution)
+- [ ] Decision is based on evidence from analysis, and plan faithfully implements these decisions
+- [ ] Plan is based on analysis synthesis, not solution copying
+- [ ] Each stage plan follows the format specified in Plan Object Format (Strategy Role, Objective, Implementation Details)
 """
 
 ML_SUMMARY_SYSTEM_PROMPT = """
@@ -460,20 +577,6 @@ Call `generate_final_answer` with the 5 structured fields.
 
 ---
 
-## Output Fields Overview
-
-Your final output MUST contain exactly 5 fields:
-
-| Field | Purpose | Consumed By Planner For |
-|-------|---------|-------------------------|
-| `code_technical_summary` | Compressed technical fingerprint of each stage | Comparing solutions WITHOUT reading full code; checking if direction was tried |
-| `root_cause_analysis` | Attribution connecting stage changes to score | Understanding causality; avoiding repeated failures |
-| `key_learnings` | Reusable ML insights from this experiment | Accumulating patterns; applying proven techniques |
-| `actionable_guidance` | Stage-specific recommendations for next iteration | Deciding evolution direction; concrete implementation hints |
-| `fusion_profile` | Model characteristics for complementarity analysis | Deciding which historical solutions to fuse for ensemble diversity |
-
----
-
 ## Six Stages Reference
 
 When attributing performance to stages, use this reference:
@@ -481,8 +584,8 @@ When attributing performance to stages, use this reference:
 | Stage | What to Analyze |
 |-------|-----------------|
 | load_data | Data loading, missing value handling, type conversion, data filtering |
-| cross_validation | Validation strategy, fold count, stratification, data leakage prevention |
-| create_features | Feature engineering, encoding methods, scaling, feature selection |
+| get_splitter | Validation strategy, fold count, stratification, data leakage prevention |
+| preprocess | Data transformation, encoding methods, scaling, feature engineering |
 | train_and_predict | Model choice, hyperparameters, training process, regularization |
 | ensemble | Model combination strategy, weights, aggregation method |
 | workflow | Pipeline orchestration, execution flow, resource management |
@@ -510,44 +613,32 @@ When attributing performance to stages, use this reference:
 
 ---
 
+## Output Fields Overview
+
+Your final output MUST contain exactly 5 fields:
+
+| Field | Purpose | Consumed By Planner For |
+|-------|---------|-------------------------|
+| `code_technical_summary` | Compressed technical fingerprint of each stage | Comparing solutions WITHOUT reading full code; checking if direction was tried |
+| `root_cause_analysis` | Attribution connecting stage changes to score | Understanding causality; avoiding repeated failures |
+| `key_learnings` | Reusable ML insights from this experiment | Accumulating patterns; applying proven techniques |
+| `actionable_guidance` | Stage-specific recommendations for next iteration | Deciding evolution direction; concrete implementation hints |
+| `fusion_profile` | Model characteristics for complementarity analysis | Deciding which historical solutions to fuse for ensemble diversity |
+
+---
+
 ## Quality Standards
-**The following demonstrates expected specificity. Content should reflect actual implementation, not imitate placeholders:**
 
-### code_technical_summary
-| Aspect | ❌ Bad | ✅ Good |
-|--------|--------|---------|
-| Core | "uses a model" | "[algorithm name] [variant/mode] for [task type]" |
-| Config | "default parameters" | "[param1=value1, param2=value2, ...] (list key parameters with actual values)" |
-| Transform | "processes data" | "[input shape/type] → [output shape/type] after [transformation steps]" |
-| Special | (empty) | "[notable preprocessing/postprocessing logic], or 'standard' if none" |
-
-
-### root_cause_analysis
-| ❌ Bad | ✅ Good |
-|--------|---------|
-| "The model improved" | "[stage]: [specific change made] resulted in [metric] [before→after], because [ML reasoning with evidence]" |
-| "Score went down" | "[stage]: [specific change made] caused [failure mode] ([supporting metrics]), suggesting [hypothesis for why]" |
-
-### key_learnings
-| ❌ Bad | ✅ Good |
-|--------|---------|
-| "[method] works well" | "[method with params] outperforms [alternative] by [metric delta] on [data characteristic], with [additional benefit if any]" |
-| "[concept] is important" | "[specific technique with config] achieves [outcome] because [reason]; [alternative] fails when [condition]" |
-
-### actionable_guidance
-| ❌ Bad | ✅ Good |
-|--------|---------|
-| "Improve feature engineering" | "[stage]: [specific action] - [concrete implementation details with method/params/columns]" |
-| "Try a better model" | "[stage]: Replace [current] with [alternative(key_params)] for [specific reason tied to data characteristics]" 
-
-### fusion_profile
-| Aspect | ❌ Bad | ✅ Good |
-|--------|--------|---------|
-| Model Family | "uses tree model" | "[GBDT / Linear / NN / ...], specifically [algorithm name]" |
-| Feature Strategy | "does feature engineering" | "[minimal / moderate / heavy / embedding_based]: [brief justification]" |
-| Key Techniques | "various techniques" | "[technique_1, technique_2, technique_3] (top 3 distinctive)" |
-| Prediction Stats | (missing or incomplete) | "OOF: mean=[X], std=[X], min=[X], max=[X]" |
-| Complementarity Hints | "works well with other models" | "[specific model families or approaches] because [reasoning based on inductive bias difference]" |
+| Field | ❌ Bad | ✅ Good |
+|-------|--------|---------|
+| code_technical_summary.Core | "uses a model" | "[Specific Algorithm] with [Key Mechanism] for [Task Type]" |
+| code_technical_summary.Config | "default parameters" | "[Critical Hyperparameters] that define the strategy" |
+| code_technical_summary.Depth | (missing) | "[Strategy-specific implementation] — [Justification based on Analysis]" |
+| root_cause_analysis | "The model improved" | "[Stage change] caused [Metric Delta], because [Theoretical Mechanism] matched [Data Physics]" |
+| key_learnings | "Method X works well" | "[Technique] validated: improves score by [Delta] due to [Reason]; Transferability: [High/Low]" |
+| actionable_guidance.Status | "Needs work" | "[Deepen/Pivot] direction based on [Diagnosis]" |
+| actionable_guidance.Gap | (missing) | "[Specific Optimization] required to address [Identified Bottleneck]" |
+| fusion_profile | "works well with others" | "[Model Family], complements [Other Family] due to [Different Inductive Bias]" |
 
 ---
 
@@ -583,7 +674,7 @@ When analyzing solutions, these are the available fields:
 |-------|-------------|------------|
 | `solution_id` | Unique identifier for this solution | Reference in tool calls |
 | `parent_id` | The solution_id of direct ancestor (null if genesis) | Track evolution lineage |
-| `score` | Primary evaluation metric (higher is better) | Compare performance |
+| `score` | Evaluation metric, normalized to 0→1, higher is better, goal is 1.0 | Compare performance |
 | `evaluation` | Detailed evaluation results (per-fold scores, metrics breakdown) | Diagnose performance issues |
 | `generate_plan` | The Planner's intended changes for each stage | Understand intent vs outcome |
 | `solution` | Source code implementation for each stage | Extract technical details |
@@ -654,185 +745,134 @@ Collect context by calling these tools:
 
 ---
 
+
 ### Phase 2: Comparative Analysis
 
-**MANDATORY**: Call `write_summary_analysis` tool with your analysis report.
-
-Your analysis must cover 4 parts, each preparing content for one output field:
+**MANDATORY**: Call `write_summary_analysis` with your analysis.
 
 {% if parent_solution %}
+
+#### Analysis Framework
+
+**Core Task**: Diagnose experiment results, identify unexploited signals, and provide breakthrough guidance for the next evolution.
+
+**Flow**:
+1. **Validation**: Did Planner's hypothesis work?
+2. **Attribution**: Which change caused the score delta? Why?
+3. **Unexploited Signals**: What data signals are NOT reaching the model?
+4. **Ceiling Assessment**: What's the ceiling of current direction? How far are we?
+5. **Direction**: DEEPEN or PIVOT? What specific actions?
+
 ```markdown
-# Summary Analysis Report
+# Summary Analysis
+## 1. Hypothesis Validation (The "Did it work?")
+*Check if the Planner's strategic intent was realized.*
+| Intent (Hypothesis) | Actual Outcome | Verdict |
+|---------------------|----------------|---------|
+| **Primary Change** | [e.g. "Add Mixup to reduce overfitting"] | [e.g. "Train/Val gap narrowed by 0.05"] | [Validated / Invalidated] |
+| **Physics Alignment** | [e.g. "Swin matches texture"] | [e.g. "Score improved significantly vs ResNet"] | [Aligned / Misaligned] |
 
-## Part 1: Technical Implementation Review
-(Preparing for: code_technical_summary)
+## 2. Attribution & Root Cause
+### 2.1 Stage Diff & Impact
+| Stage | Changed? | Technical Delta | Score Impact (Est.) |
+|-------|----------|-----------------|---------------------|
+| load_data | Y/N | ... | ... |
+| get_splitter | Y/N | ... | ... |
+| preprocess | Y/N | ... | ... |
+| train_and_predict | Y/N | ... | ... |
+| ensemble | Y/N | ... | ... |
+| workflow | Y/N | ... | ... |
 
-For each of the 6 stages, extract:
-| Stage | Core Algorithm | Key Config | Transform | Special Logic |
-|-------|---------------|------------|-----------|---------------|
-| load_data | | | | |
-| cross_validation | | | | |
-| create_features | | | | |
-| train_and_predict | | | | |
-| ensemble | | | | |
-| workflow | | | | |
+### 2.2 Mechanism Analysis
+*   **Primary Driver**: [Which specific change caused the metric shift?]
+*   **Why**: [Explain via first principles."]
 
-## Part 2: Performance Attribution
-(Preparing for: root_cause_analysis)
+## 3. Diagnosis & Next Steps
 
-### Score Delta
-- Parent: [score] → Current: [score] (Δ = [+/-delta])
+### 3.1 Performance Bottleneck
+| Dimension | Observation | Prescription for Next Planner |
+|-----------|-------------|-------------------------------|
+| **Bottleneck** | [Identify performance limiter: Bias, Variance, or Implementation] | [Suggest high-level remedy strategy] |
+| **Strategy Fit** | [Assess if current architecture fits data physics] | [Suggest DEEPEN or PIVOT direction] |
 
-### Stage-by-Stage Diff
-| Stage | Changed? | Parent Implementation | Current Implementation |
-|-------|----------|----------------------|------------------------|
-| load_data | Yes/No | ... | ... |
-| cross_validation | Yes/No | ... | ... |
-| create_features | Yes/No | ... | ... |
-| train_and_predict | Yes/No | ... | ... |
-| ensemble | Yes/No | ... | ... |
-| workflow | Yes/No | ... | ... |
+### 3.2 Unexploited Signals
+*What information exists in data but is NOT reaching the model?*
 
-### Attribution Analysis
-- **Primary Driver**: [stage_name]
-  - What changed: [specific modification]
-  - Why it affected score: [ML reasoning with evidence]
-- **Secondary Factors** (if any):
-  - [stage_name]: [brief explanation]
+| Signal Source | Current Usage | Lost Information | Potential Value |
+|---------------|---------------|------------------|-----------------|
+| [column/structure/relationship] | [how used or "discarded"] | [what signal is lost] | [H/M/L] |
+| ... | ... | ... | ... |
 
-## Part 3: Evidence Collection
-(Preparing for: key_learnings)
 
-### What Worked (with evidence)
-- [Technique/Choice]: [Observation] → [Conclusion]
-- ...
+## 4. Learnings & Guidance
+*   **Key Learnings**: [Synthesize validated techniques and invalidated attempts with their effects]
+*   **Actionable Guidance**:
+    *   **Direction**: [Strategic direction for next iteration]
+    *   **Priority**: [Specific stage to focus on]
+    *   **Recommendation**: [Concrete optimization to attempt next]
 
-### What Didn't Work (with evidence)
-- [Technique/Choice]: [Observation] → [Conclusion]
-- ...
-
-### Generalizable Patterns
-- [Pattern that could apply to similar tasks]
-- ...
-
-## Part 4: Strategic Assessment
-(Preparing for: actionable_guidance)
-
-### Stage Priority Analysis
-| Stage | Current Status | Improvement Potential | Reasoning |
-|-------|---------------|----------------------|-----------|
-| ... | ✅ Solid | Low | ... |
-| ... | ⚠️ Needs Improvement | High | ... |
-| ... | ❌ Critical Issue | Critical | ... |
-
-### Evolution Health Check
-- **Score Trend**: [improving / plateau / declining] (from ancestor chain)
-- **Exploration Saturation**: [which directions have been tried and exhausted]
-- **Unexplored Directions**: [promising approaches not yet attempted]
-
-### Direction Recommendation
-- **Strategy**: [DEEPEN / EXPLORE / PIVOT]
-  - DEEPEN: Current approach working, optimize further in same direction
-  - EXPLORE: Try orthogonal improvements while keeping core approach
-  - PIVOT: Current direction exhausted, need fundamentally different approach
-- **Reasoning**: [based on score trend and saturation analysis]
-- **Specific Next Steps**: [concrete recommendations per priority stage]
-
-## Part 5: Fusion Profile Extraction
-(Preparing for: fusion_profile)
-
-- **Model**: What algorithm in train_and_predict? What family (GBDT/Linear/NN/...)?
-- **Features**: How much feature engineering in create_features? (minimal/moderate/heavy/embedding)
-  - What are the top 2-3 distinctive techniques?
-- **Prediction Stats**: Extract from prediction_stats field (OOF mean, std; Test mean, std)
-- **Complements With**: Based on model family and feature strategy, what orthogonal approaches would have different inductive bias?
-
+## 5. Fusion Profile
+| Dimension | Analysis |
+|-----------|----------|
+| Model family | [algorithm type and characteristics] |
+| Feature strategy | [how features are engineered] |
+| Prediction stats | [OOF and test distribution] |
+| Complements with | [what orthogonal approaches would pair well] |
 ```
 
 {% else %}
+
+#### Analysis Framework
+
+**Core Task**: Establish baseline understanding, identify opportunity space, and set foundation for evolution direction.
+
+**Flow**:
+1. **Baseline Fit**: Does initial strategy match data characteristics?
+2. **Stage Strength**: Which stage is strongest? Which is weakest?
+3. **Unexploited Signals**: What data signals are NOT reaching the model?
+4. **Priority**: What's the highest-priority improvement direction?
+
 ```markdown
-# Summary Analysis Report
+# Summary Analysis
 
-## Part 1: Technical Implementation Review
-(Preparing for: code_technical_summary)
+## 1. Baseline Assessment (The Anchor Check)
+*Evaluate the initial hypothesis effectiveness.*
+| Dimension | Observation | Assessment |
+|-----------|-------------|------------|
+| **Score** | [Current Score Value] | [Assessment of baseline strength relative to task complexity] |
+| **Physics-Model Fit** | [Convergence and stability observation] | [Verdict: Does the model behavior confirm the initial data physics assumption?] |
 
-For each of the 6 stages, extract:
-| Stage | Core Algorithm | Key Config | Transform | Special Logic |
-|-------|---------------|------------|-----------|---------------|
-| load_data | | | | |
-| cross_validation | | | | |
-| create_features | | | | |
-| train_and_predict | | | | |
-| ensemble | | | | |
-| workflow | | | | |
+## 2. Implementation Overview
+| Stage | Implementation | Strength/Weakness |
+|-------|----------------|-------|
+| load_data | | |
+| get_splitter | | |
+| preprocess | | |
+| train_and_predict | | |
+| ensemble | | |
+| workflow | | |
 
-## Part 2: Baseline Assessment
-(Preparing for: root_cause_analysis)
+## 3. Unexploited Signals
+*What information exists in data but is NOT reaching the model?*
 
-### Initial Score
-- Score: [score]
-- Benchmark: [how does it compare to Get_Best_Solutions results, if available]
+| Signal Source | Current Usage | Lost Information | Potential Value |
+|---------------|---------------|------------------|-----------------|
 
-### Stage Quality Assessment
-| Stage | Quality | Assessment |
-|-------|---------|------------|
-| load_data | ✅/⚠️/❌ | [what's good or problematic] |
-| cross_validation | ✅/⚠️/❌ | [what's good or problematic] |
-| create_features | ✅/⚠️/❌ | [what's good or problematic] |
-| train_and_predict | ✅/⚠️/❌ | [what's good or problematic] |
-| ensemble | ✅/⚠️/❌ | [what's good or problematic] |
-| workflow | ✅/⚠️/❌ | [what's good or problematic] |
 
-### Overall Strategy Fit
-- Is the overall approach appropriate for this data? [Yes/No/Partially]
-- Reasoning: [based on EDA characteristics and task requirements]
+## 4. Learnings & Guidance
+*   **Strongest Component**: [Which part of the pipeline is working best?]
+*   **Weakest Link**: [Where is the obvious improvement opportunity?]
+*   **Actionable Guidance**:
+    *   **Next Logic**: [What should the next Planner try?]
 
-## Part 3: Evidence Collection
-(Preparing for: key_learnings)
+## 5. Fusion Profile
 
-### Initial Observations
-- [What the baseline reveals about this task]
-- [What techniques showed promise]
-- [What techniques underperformed expectations]
-
-### Hypotheses for Improvement
-- [Hypothesis 1]: [reasoning]
-- [Hypothesis 2]: [reasoning]
-
-## Part 4: Strategic Assessment
-(Preparing for: actionable_guidance)
-
-### Stage Priority Ranking
-| Priority | Stage | Reason |
-|----------|-------|--------|
-| 1 | [stage] | [why highest priority] |
-| 2 | [stage] | [why second priority] |
-| 3 | [stage] | [why third priority] |
-
-### Recommended First Improvements
-- **[Priority 1 Stage]**: 
-  - Current issue: [what's wrong]
-  - Recommendation: [what to do]
-  - Implementation hint: [how to do it]
-
-- **[Priority 2 Stage]**:
-  - Current issue: [what's wrong]
-  - Recommendation: [what to do]
-  - Implementation hint: [how to do it]
-
-### Exploration Directions
-- [Direction 1]: [why promising for this data]
-- [Direction 2]: [why promising for this data]
-
-## Part 5: Fusion Profile Extraction
-(Preparing for: fusion_profile)
-
-- **Model**: What algorithm in train_and_predict? What family (GBDT/Linear/NN/...)?
-- **Features**: How much feature engineering in create_features? (minimal/moderate/heavy/embedding)
-  - What are the top 2-3 distinctive techniques?
-- **Prediction Stats**: Extract from prediction_stats field (OOF mean, std; Test mean, std)
-- **Complements With**: Based on model family and feature strategy, what orthogonal approaches would have different inductive bias?
-
+| Dimension | Analysis |
+|-----------|----------|
+| Model family | [algorithm type and characteristics] |
+| Feature strategy | [how features are engineered] |
+| Prediction stats | [OOF and test distribution] |
+| Complements with | [what orthogonal approaches would pair well] |
 ```
 {% endif %}
 
@@ -842,131 +882,15 @@ For each of the 6 stages, extract:
 
 ### Phase 3: Structured Output
 
-**MANDATORY**: Call `generate_final_answer` with all 4 fields.
-
-Based on your Phase 2 analysis, fill each field following these templates:
-
-#### Field 1: code_technical_summary
-
-```markdown
-### load_data
-- Core: [primary algorithm/method]
-- Config: [key parameters with actual values]
-- Transform: [input] → [output]
-- Special: [notable logic, or "standard"]
-
-### cross_validation
-- Core: ...
-- Config: ...
-- Transform: ...
-- Special: ...
-
-### create_features
-- Core: ...
-- Config: ...
-- Transform: ...
-- Special: ...
-
-### train_and_predict
-- Core: ...
-- Config: ...
-- Transform: ...
-- Special: ...
-
-### ensemble
-- Core: ...
-- Config: ...
-- Transform: ...
-- Special: ...
-
-### workflow
-- Core: ...
-- Config: ...
-- Transform: ...
-- Special: ...
-```
-
-#### Field 2: root_cause_analysis
-
-{% if parent_solution %}
-```markdown
-**Score Change**: [parent_score] → [current_score] ([+/-delta])
-
-**Primary Attribution**: [stage_name]
-- **What Changed**: [specific modification - algorithm, parameter, or logic change]
-- **Why It Worked/Failed**: [ML explanation with evidence from evaluation metrics]
-
-**Secondary Factors** (if any):
-- [stage_name]: [brief explanation of contribution]
-
-**Evaluation Details**:
-- [Key metrics that support the attribution]
-- [Per-fold variance if relevant]
-```
-{% else %}
-```markdown
-**Initial Score**: [score]
-
-**Strongest Stage**: [stage_name]
-- What's done well: [specific implementation strength]
-- Evidence: [metrics or observations supporting this]
-
-**Weakest Stage**: [stage_name]
-- Current issue: [specific problem]
-- Impact: [how it affects overall performance]
-
-**Strategy Assessment**:
-- Overall approach fit: [appropriate / needs adjustment]
-- Reasoning: [based on data characteristics]
-```
-{% endif %}
-
-#### Field 3: key_learnings
-
-```markdown
-- [Specific learning 1 with numbers/parameters]: [evidence from this experiment]
-- [Specific learning 2 with numbers/parameters]: [evidence from this experiment]
-- [Specific learning 3 with numbers/parameters]: [evidence from this experiment]
-- [Anti-pattern to avoid]: [what went wrong and why]
-```
-
-#### Field 4: actionable_guidance
-
-```markdown
-**Priority Ranking**: [stage1] > [stage2] > [stage3] > ...
-
-**Stage Recommendations**:
-
-**[Priority 1 Stage]**:
-- Status: [✅ Solid / ⚠️ Needs Improvement / ❌ Critical Issue]
-- Current: [one-line description of current implementation]
-- Recommendation: [specific change to make]
-- Implementation Hint: [concrete algorithm/parameter/code pattern]
-
-**[Priority 2 Stage]**:
-- Status: [✅ Solid / ⚠️ Needs Improvement / ❌ Critical Issue]
-- Current: [one-line description]
-- Recommendation: [specific change]
-- Implementation Hint: [concrete hint]
-
-**Strategic Direction**:
-- Direction: [DEEPEN / EXPLORE / PIVOT]
-- Reasoning: [based on evolution history and score trends]
-
-**Unexplored Directions**:
-- [Approach 1 not yet tried]: [why it might help]
-- [Approach 2 not yet tried]: [why it might help]
-```
-
-#### Field 5: fusion_profile
-
-```markdown
-- **Model**: [algorithm] ([GBDT / Linear / NN / Tree / SVM])
-- **Features**: [minimal / moderate / heavy / embedding]: [top 2-3 techniques]
-- **OOF**: mean=[X], std=[X]
-- **Test**: mean=[X], std=[X]
-- **Complements With**: [1-2 orthogonal approaches with brief reason]
-
+**MANDATORY**: Call `generate_final_answer` with all 5 fields.
+Based on Phase 2 analysis, output:
+| Field | Source | Format |
+|-------|--------|--------|
+| code_technical_summary | Section 1 Stage Diff | Per-stage: Core algorithm, Key config, Transform, Depth |
+| root_cause_analysis | Section 1 Causal Analysis + Section 2 Diagnosis | Score delta, Primary attribution with mechanism and evidence |
+| key_learnings | Section 3 Learnings | Validated patterns and invalidated approaches with transferability |
+| actionable_guidance | Section 4 Guidance | Direction, Priority stages, Specific recommendations |
+| fusion_profile | Section 5 Fusion Profile | Model family, Feature strategy, Prediction stats, Complements |
 
 ⚠️ **MUST submit via `generate_final_answer` tool. Do NOT output directly.**
 
@@ -975,13 +899,8 @@ Based on your Phase 2 analysis, fill each field following these templates:
 ## Section 5: Final Checklist
 
 Before submitting, verify:
+- [ ] Root cause identifies mechanism, not just "stage X changed"
+- [ ] Unexploited signals are explicitly listed with potential value
+- [ ] Guidance provides specific next action, not generic "improve X"
 
-- [ ] Phase 1: Information gathering tools were called
-- [ ] Phase 2: `write_summary_analysis` was called with complete analysis
-- [ ] `code_technical_summary`: All 6 stages covered with specific details
-- [ ] `root_cause_analysis`: Specific stage attribution with evidence (not vague)
-- [ ] `key_learnings`: Each learning has numbers/parameters and evidence (not generic)
-- [ ] `actionable_guidance`: Has priority ranking AND implementation hints (not just "improve X")
-- [ ] `fusion_profile`: Has model, features, prediction stats, and complements hint
-- [ ] No direct copying from existing solutions - insights are synthesized
 """

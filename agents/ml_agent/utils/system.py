@@ -2,6 +2,7 @@
 """
 This file define
 """
+import os
 import platform
 import shutil
 import subprocess
@@ -34,26 +35,24 @@ def get_hardware_context() -> dict:
 
     # gpu info
     gpu_available = False
+    gpu_count = 0
     if shutil.which("nvidia-smi"):
         try:
-            count_out = subprocess.check_output(
-                ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"], encoding="utf-8"
-            )
-            gpu_count = int(count_out.strip())
-
+            # query gpu detail
             details_out = subprocess.check_output(
-                ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"], encoding="utf-8"
+                ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+                encoding="utf-8"
             )
-
+            gpu_lines = [line.strip() for line in details_out.strip().split('\n') if line.strip()]
+            gpu_count = len(gpu_lines)
             info.append(f"GPU Available: True (Count: {gpu_count})")
-
-            gpu_lines = details_out.strip().split('\n')
             for idx, line in enumerate(gpu_lines):
-                name, mem = line.split(',')
-                info.append(f"  - GPU {idx}: {name.strip()} ({mem.strip()})")
-
+                parts = line.split(',')
+                if len(parts) >= 2:
+                    name = parts[0].strip()
+                    mem = parts[1].strip()
+                    info.append(f"  - GPU {idx}: {name} ({mem})")
             gpu_available = True
-
         except Exception as e:
             info.append(f"GPU Check Failed: nvidia-smi found but execution error ({str(e)}).")
     else:
@@ -61,11 +60,9 @@ def get_hardware_context() -> dict:
 
     return {
         "hardware_info": "\n".join(info),
-        "gpu_available": gpu_available
+        "gpu_available": gpu_available,
+        "gpu_count": gpu_count,
     }
-
-
-import os
 
 
 def get_directory_structure(path: str, max_files: int = 50) -> str:

@@ -34,19 +34,17 @@ def get_ml_executor_best_code_path(context: Context, create: bool = True) -> Pat
     return path
 
 
-def get_evocoder_evaluate_path(
-    context: Context, stage: str, create: bool = True
-) -> Path:
+def get_evocoder_evaluate_path(context: Context, stage: str, create: bool = True) -> Path:
     """
     get evocoder evaluate path
     """
     base_path = Path(context.base_path)
     path = (
-        base_path
-        / str(context.task_id)
-        / str(context.current_iteration)
-        / "evocoder"
-        / stage
+            base_path
+            / str(context.task_id)
+            / str(context.current_iteration)
+            / "evocoder"
+            / stage
     )
     if create:
         path.mkdir(parents=True, exist_ok=True)
@@ -58,7 +56,11 @@ def get_latest_eda_path(context: Context, create: bool = True) -> Path:
     get latest eda path
     """
     base_path = Path(context.base_path)
-    path = base_path / str(context.task_id) / "eda"
+    path = (
+            base_path
+            / str(context.task_id)
+            / "eda"
+    )
     if create:
         path.mkdir(parents=True, exist_ok=True)
     return path
@@ -124,11 +126,11 @@ def get_current_eda_path(context: Context, create: bool = True) -> Path:
     """
     base_path = Path(context.base_path)
     path = (
-        base_path
-        / str(context.task_id)
-        / str(context.current_iteration)
-        / "planner"
-        / "eda"
+            base_path
+            / str(context.task_id)
+            / str(context.current_iteration)
+            / "planner"
+            / "eda"
     )
     if create:
         path.mkdir(parents=True, exist_ok=True)

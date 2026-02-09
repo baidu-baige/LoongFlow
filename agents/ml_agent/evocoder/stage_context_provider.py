@@ -15,11 +15,11 @@ from typing import Any, Dict, List
 from jinja2 import Environment
 
 from agents.ml_agent.prompt.evocoder import (
-    CreateFeaturesPrompts,
-    CrossValidationPrompts,
     EDAPrompts,
     EnsemblePrompts,
+    GetSplitterPrompts,
     LoadDataPrompts,
+    PreprocessPrompts,
     TrainAndPredictPrompts,
     WorkflowPrompts,
 )
@@ -42,6 +42,7 @@ class TaskConfig:
     assemble_models: dict[str, str] = field(default_factory=dict)
     workspace_path: str = ""
     gpu_available: bool = False
+    gpu_count: int = 0
     hardware_info: str = ""
     task_dir_structure: str = ""
 
@@ -59,8 +60,8 @@ class Stage(str, Enum):
 
     EDA = "eda"
     LOAD_DATA = "load_data"
-    CROSS_VALIDATION = "cross_validation"
-    CREATE_FEATURES = "create_features"
+    GET_SPLITTER = "get_splitter"
+    PREPROCESS = "preprocess"
     TRAIN_AND_PREDICT = "train_and_predict"
     ENSEMBLE = "ensemble"
     WORKFLOW = "workflow"
@@ -149,9 +150,6 @@ class LoadDataContextProvider(StageContextProvider):
                 {
                     "task_description": task_config.task_description,
                     "eda_analysis": task_config.eda_analysis,
-                    "eda_code": task_config.code_deps.get(
-                        "eda", "# Eda code not available"
-                    ),
                     "task_data_path": task_config.task_data_path,
                     "output_data_path": task_config.workspace_path,
                     "gpu_available": task_config.gpu_available,
@@ -185,16 +183,16 @@ class LoadDataContextProvider(StageContextProvider):
         ]
 
 
-class CrossValidationContextProvider(StageContextProvider):
-    """Provides context for the 'cross_validation' stage."""
+class GetSplitterContextProvider(StageContextProvider):
+    """Provides context for the 'get_splitter' stage."""
 
     def stage(self) -> Stage:
-        return Stage.CROSS_VALIDATION
+        return Stage.GET_SPLITTER
 
     def provide(self, task_config: TaskConfig) -> List[Message]:
         system_prompt = (
             Environment()
-            .from_string(CrossValidationPrompts.SYSTEM)
+            .from_string(GetSplitterPrompts.SYSTEM)
             .render(
                 {
                     "task_description": task_config.task_description,
@@ -213,7 +211,7 @@ class CrossValidationContextProvider(StageContextProvider):
 
         user_prompt = (
             Environment()
-            .from_string(CrossValidationPrompts.USER)
+            .from_string(GetSplitterPrompts.USER)
             .render(
                 {
                     "plan": task_config.plan,
@@ -234,16 +232,16 @@ class CrossValidationContextProvider(StageContextProvider):
         ]
 
 
-class CreateFeaturesContextProvider(StageContextProvider):
-    """Provides context for the 'create_features' stage."""
+class PreprocessContextProvider(StageContextProvider):
+    """Provides context for the 'preprocess' stage."""
 
     def stage(self) -> Stage:
-        return Stage.CREATE_FEATURES
+        return Stage.PREPROCESS
 
     def provide(self, task_config: TaskConfig) -> List[Message]:
         system_prompt = (
             Environment()
-            .from_string(CreateFeaturesPrompts.SYSTEM)
+            .from_string(PreprocessPrompts.SYSTEM)
             .render(
                 {
                     "task_description": task_config.task_description,
@@ -251,8 +249,8 @@ class CreateFeaturesContextProvider(StageContextProvider):
                     "load_data_code": task_config.code_deps.get(
                         "load_data", "# Data loader code not available"
                     ),
-                    "cross_validation_code": task_config.code_deps.get(
-                        "cross_validation", "# Cross Validation code not available"
+                    "get_splitter_code": task_config.code_deps.get(
+                        "get_splitter", "# Get Splitter code not available"
                     ),
                     "task_data_path": task_config.task_data_path,
                     "output_data_path": task_config.workspace_path,
@@ -265,7 +263,7 @@ class CreateFeaturesContextProvider(StageContextProvider):
 
         user_prompt = (
             Environment()
-            .from_string(CreateFeaturesPrompts.USER)
+            .from_string(PreprocessPrompts.USER)
             .render(
                 {
                     "plan": task_config.plan,
@@ -303,15 +301,16 @@ class TrainAndPredictContextProvider(StageContextProvider):
                     "load_data_code": task_config.code_deps.get(
                         "load_data", "# Data loader code not available"
                     ),
-                    "cross_validation_code": task_config.code_deps.get(
-                        "cross_validation", "# Cross Validation code not available"
+                    "get_splitter_code": task_config.code_deps.get(
+                        "get_splitter", "# Get Splitter code not available"
                     ),
                     "feature_code": task_config.code_deps.get(
-                        "create_features", "# Feature engineering code not available"
+                        "preprocess", "# Feature engineering code not available"
                     ),
                     "task_data_path": task_config.task_data_path,
                     "output_data_path": task_config.workspace_path,
                     "gpu_available": task_config.gpu_available,
+                    "gpu_count": task_config.gpu_count,
                     "hardware_info": task_config.hardware_info,
                     "task_dir_structure": task_config.task_dir_structure,
                 }
@@ -359,10 +358,10 @@ class EnsembleContextProvider(StageContextProvider):
                         "load_data", "# load_data code not available"
                     ),
                     "feature_code": task_config.code_deps.get(
-                        "create_features", "# create_features code not available"
+                        "preprocess", "# preprocess code not available"
                     ),
-                    "cross_validation_code": task_config.code_deps.get(
-                        "cross_validation", "# cross_validation code not available"
+                    "get_splitter_code": task_config.code_deps.get(
+                        "get_splitter", "# get_splitter code not available"
                     ),
                     "model_code": task_config.code_deps.get(
                         "train_and_predict", "# train_and_predict code not available"
@@ -420,10 +419,10 @@ class WorkflowContextProvider(StageContextProvider):
                         "load_data", "# load_data code not available"
                     ),
                     "feature_code": task_config.code_deps.get(
-                        "create_features", "# create_features code not available"
+                        "preprocess", "# preprocess code not available"
                     ),
-                    "cross_validation_code": task_config.code_deps.get(
-                        "cross_validation", "# cross_validation code not available"
+                    "get_splitter_code": task_config.code_deps.get(
+                        "get_splitter", "# get_splitter code not available"
                     ),
                     "model_code": task_config.code_deps.get(
                         "train_and_predict", "# train_and_predict code not available"

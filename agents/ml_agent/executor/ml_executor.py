@@ -72,8 +72,8 @@ class MLExecutorAgent(Worker):
 
     STAGE_ORDER: List[Stage] = [
         Stage.LOAD_DATA,
-        Stage.CROSS_VALIDATION,
-        Stage.CREATE_FEATURES,
+        Stage.GET_SPLITTER,
+        Stage.PREPROCESS,
         Stage.TRAIN_AND_PREDICT,
         Stage.ENSEMBLE,
         Stage.WORKFLOW,
@@ -124,12 +124,7 @@ class MLExecutorAgent(Worker):
             )
 
             evaluation.metrics["model_metrics"] = {
-                "model_scores": solutions.get(
-                    Stage.WORKFLOW, CoderResult()
-                ).artifacts.get("model_scores"),
-                "prediction_stats": solutions.get(
-                    Stage.WORKFLOW, CoderResult()
-                ).artifacts.get("prediction_stats"),
+                "prediction_stats": solutions.get(Stage.WORKFLOW, CoderResult()).artifacts.get("prediction_stats"),
             }
 
             logger.info(f"evaluation successful. Final score: {evaluation.score}")
@@ -161,10 +156,10 @@ class MLExecutorAgent(Worker):
 
         content = message.get_elements(ContentElement)
         if (
-            not content
-            or len(content) == 0
-            or not content[0].data
-            or not isinstance(content[0].data, dict)
+                not content
+                or len(content) == 0
+                or not content[0].data
+                or not isinstance(content[0].data, dict)
         ):
             raise ValueError(f"Missing content element data.")
         data = content[0].data
@@ -279,6 +274,7 @@ class MLExecutorAgent(Worker):
                     code_deps=dep,
                     workspace_path=str(utils.get_ml_executor_output_path(context)),
                     gpu_available=context.metadata.get("gpu_available"),
+                    gpu_count=context.metadata.get("gpu_count"),
                     hardware_info=context.metadata.get("hardware_info"),
                     task_dir_structure=context.metadata.get("task_dir_structure"),
                 ),
@@ -358,6 +354,6 @@ class MLExecutorAgent(Worker):
         all_codes = f"""
 import pickle
 import base64
-ml_agent_RESULT = pickle.loads(base64.b64decode('{encoded_data}'))
+ML_AGENT_RESULT = pickle.loads(base64.b64decode('{encoded_data}'))
 """
         return await self.evaluator.evaluate(Message.from_text(data=f"{all_codes}"))

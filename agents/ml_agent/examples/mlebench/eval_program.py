@@ -26,18 +26,31 @@ def normalize_score(leaderboard: pd.DataFrame, my_score: float, is_lower_better:
         my_score = ref_point - my_score
 
     unique_scores = np.unique(scores)[::-1]
-
     best = unique_scores[0]
     worst = unique_scores[-1]
+
+    def _smooth_transform(pct):
+        if pct >= 0.99:
+            return 0.95 + 0.05 * (pct - 0.99) / 0.01
+        elif pct >= 0.90:
+            return 0.80 + 0.15 * (pct - 0.90) / 0.09
+        elif pct >= 0.50:
+            return 0.35 + 0.45 * (pct - 0.50) / 0.40
+        else:
+            return 0.10 + 0.25 * (pct / 0.50)
+
+    if best == worst:
+        return 0.5
 
     if my_score >= best:
         return 1.0
 
     if my_score <= worst:
-        if best == worst:
-            return 0.5
+        last_rank_score = _smooth_transform(0.0)
+        if my_score == worst:
+            return last_rank_score
         deficit = (worst - my_score) / (best - worst)
-        return max(0.0, 0.1 - 0.1 * deficit)
+        return max(0.0, last_rank_score * (1 - deficit))
 
     upper_idx = np.searchsorted(-unique_scores, -my_score, side='right') - 1
     upper_idx = max(0, upper_idx)
@@ -55,20 +68,10 @@ def normalize_score(leaderboard: pd.DataFrame, my_score: float, is_lower_better:
         interval_ratio = (my_score - lower) / (upper - lower)
 
     n_unique = len(unique_scores)
-    upper_rank = 1.0 - upper_idx / (n_unique - 1) if n_unique > 1 else 1.0
-    lower_rank = 1.0 - lower_idx / (n_unique - 1) if n_unique > 1 else 0.0
+    upper_rank = 1.0 - upper_idx / (n_unique - 1)
+    lower_rank = 1.0 - lower_idx / (n_unique - 1)
 
     raw_rank = lower_rank + interval_ratio * (upper_rank - lower_rank)
-
-    def _smooth_transform(pct):
-        if pct >= 0.99:
-            return 0.95 + 0.05 * (pct - 0.99) / 0.01
-        elif pct >= 0.90:
-            return 0.80 + 0.15 * (pct - 0.90) / 0.09
-        elif pct >= 0.50:
-            return 0.35 + 0.45 * (pct - 0.50) / 0.40
-        else:
-            return 0.35 * (pct / 0.50) ** 1.2
 
     return min(_smooth_transform(raw_rank), 0.99)
 
@@ -107,12 +110,15 @@ def run_evaluate(submission_path: Path, data_dir: Path, competition_id: str):
         "silver_medal": bool(rank_info["silver_medal"]),
         "bronze_medal": bool(rank_info["bronze_medal"]),
         "above_median": bool(rank_info["above_median"]),
-        "raw_result": score,
-        "raw_gold": rank_info["gold_threshold"],
-        "raw_silver": rank_info["silver_threshold"],
-        "raw_bronze": rank_info["bronze_threshold"],
-        "raw_median": rank_info["median_threshold"]
+        "leaderboard_score": score,
+        "leaderboard_gold": rank_info["gold_threshold"],
+        "leaderboard_silver": rank_info["silver_threshold"],
+        "leaderboard_bronze": rank_info["bronze_threshold"],
+        "leaderboard_median": rank_info["median_threshold"]
     }
+
+    if rank["gold_medal"]:
+        return 1.0,rank
 
     return normalize_score(competition_leaderboard, score, lower_better), rank
 
@@ -153,7 +159,7 @@ def evaluate(task_data_path, best_code_path, artifacts):
         "summary": f"Evaluation successful",
         "score": score,
         "metrics": {
-            "evaluate_result": score,
+            "norm_score": score,
         },
         "artifacts": {
             "rank_info": rank_info,

@@ -1,7 +1,7 @@
-name: evolux_ml
+name: loongflow_ml
 channels:
-  - pytorch
   - conda-forge
+  - pytorch
   - defaults
 
 dependencies:
@@ -14,30 +14,23 @@ dependencies:
   - ninja
   - git
 
-  # ==================== 2. PyTorch (CPU Version) ====================
-  - pytorch::pytorch=2.2.0
-  - pytorch::torchvision=0.17.0
-  - pytorch::torchaudio=2.2.0
-  - pytorch::cpuonly
+  # ==================== 3. PyTorch & RAPIDS ====================
+  - pytorch::pytorch=2.4.0
+  - pytorch::torchvision=0.19.0
+  - pytorch::torchaudio=2.4.0
 
-  # ==================== 3. Scientific Computing & Machine Learning Alternative Libraries ====================
-
-  - py-xgboost-cpu=2.1
+  - py-xgboost=2.1
   - lightgbm=4.5.0
   - catboost=1.2.8
-  - faiss-cpu=1.9.0
+  - faiss-cpu=1.11.0
 
   # ==================== 4. Scientific Computing Fundamentals ====================
   - numpy=1.26.4
-  - pandas=2.2.3
-  - scipy=1.13.1
+  - scipy=1.16.3
   - scikit-learn=1.5.2
-  - pyarrow=19.0.1
-  - h5py=3.12.1
 
   # ==================== 5. System-Level Libraries ====================
   - opencv=4.10.0
   - graphviz=12.2.1
-  - python-graphviz=0.21
-  - matplotlib=3.10.0
   - fasttext=0.9.2
+  - gdcm=2.8.9

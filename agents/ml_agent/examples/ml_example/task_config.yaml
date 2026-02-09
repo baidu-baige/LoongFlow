@@ -8,10 +8,10 @@ workspace_path: "./output"
 llm_config:
   url: "https://qianfan.baidubce.com/v2"
   api_key: "******"
-  model: "deepseek-v3"
+  model: "deepseek-v3.2"
   temperature: 0.8
   context_length: 128000
-  max_tokens: 32768
+  max_tokens: 16384
   top_p: 1.0
 
 # ------------------------------------------------------------------------------

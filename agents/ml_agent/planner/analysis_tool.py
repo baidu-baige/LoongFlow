@@ -23,12 +23,7 @@ class WriteStrategicAnalysisArgs(BaseModel):
     analysis_content: str = Field(
         ...,
         description=(
-            "Complete strategic analysis in markdown format. Must include:\n"
-            "1. Plan Effectiveness Analysis - which plans worked/failed and why\n"
-            "2. Implementation Gap Analysis - differences vs high-score solutions\n"
-            "3. Bottleneck Diagnosis - current weak points and root causes\n"
-            "4. Evolution Space - untried directions and recommendations\n"
-            "5. Decision - primary evolution direction and fusion decision"
+            "Complete strategic analysis in markdown format."
         ),
     )
 

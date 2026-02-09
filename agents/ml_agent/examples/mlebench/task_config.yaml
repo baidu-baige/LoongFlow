@@ -63,7 +63,7 @@ evolve:
   # --- Database Configuration ---
   database:
     storage_type: "in_memory"
-    num_islands: 3
-    population_size: 30
+    num_islands: 2
+    population_size: 20
     checkpoint_interval: 5
     sampling_weight_power: 1.0

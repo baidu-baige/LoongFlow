@@ -54,7 +54,7 @@ class MLEvaluator(LoongFlowEvaluator):
         result_data = {}
 
         try:
-            # 1. Dynamically load the LLM code module to extract ml_agent_RESULT
+            # 1. Dynamically load the LLM code module to extract ML_AGENT_RESULT
             spec = importlib.util.spec_from_file_location(
                 "llm_code_module", llm_file_path
             )
@@ -64,16 +64,16 @@ class MLEvaluator(LoongFlowEvaluator):
             llm_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(llm_module)
 
-            # Check for ml_agent_RESULT variable
-            if not hasattr(llm_module, "ml_agent_RESULT"):
-                raise AttributeError("Invalid llm_code, ml_agent_RESULT not found")
+            # Check for ML_AGENT_RESULT variable
+            if not hasattr(llm_module, "ML_AGENT_RESULT"):
+                raise AttributeError("Invalid llm_code, ML_AGENT_RESULT not found")
 
-            ml_agent_result = llm_module.ml_agent_RESULT
+            ml_agent_result = llm_module.ML_AGENT_RESULT
 
             if not isinstance(ml_agent_result, dict):
-                raise TypeError("ml_agent_RESULT must be a dict")
+                raise TypeError("ML_AGENT_RESULT must be a dict")
 
-            logger.debug(f"[Child PID:{pid}] ml_agent_RESULT loaded successfully.")
+            logger.debug(f"[Child PID:{pid}] ML_AGENT_RESULT loaded successfully.")
 
             # 2. Dynamically load evaluator code module
             spec = importlib.util.spec_from_file_location(
@@ -129,6 +129,8 @@ class MLEvaluator(LoongFlowEvaluator):
         except:
             pass
 
-        logger.debug(f"Subprocess exit now. Result score: \
-    {result_data.get('score', '')}. Result summary: {result_data.get('summary', '')}")
+        logger.debug(
+            f"Subprocess exit now. Result score: \
+    {result_data.get('score', '')}. Result summary: {result_data.get('summary', '')}"
+        )
         os._exit(0)

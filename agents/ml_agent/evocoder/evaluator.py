@@ -59,14 +59,11 @@ class EvoCoderEvaluator(LoongFlowEvaluator, abc.ABC):
         log_fd = os.open(log_file_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
         os.dup2(log_fd, 1)  # stdout
         os.dup2(log_fd, 2)  # stderr
+
+        sys.stdout = open(1, "w", encoding="utf-8", closefd=False)
+        sys.stderr = open(2, "w", encoding="utf-8", closefd=False)
+
         os.close(log_fd)
-
-        original_stdout = sys.stdout
-        original_stderr = sys.stderr
-
-        log_file = open(log_file_path, "w", encoding="utf-8")
-        sys.stdout = log_file
-        sys.stderr = log_file
 
         logger = get_logger("EvoCoderEvaluator_Child")
         pid = os.getpid()
@@ -134,52 +131,55 @@ class EvoCoderEvaluator(LoongFlowEvaluator, abc.ABC):
             logger.error(traceback.format_exc())
             result_data = {"error": str(e), "traceback": traceback.format_exc()}
 
+        if "error" in result_data or result_data.get("score", 1) == 0:
+            try:
+                sys.stdout.flush(), sys.stderr.flush()
+                if logs := open(log_file_path, "r", encoding="utf-8").read()[-3000:].strip():
+                    result_data.setdefault("artifacts", {})["process_log"] = logs
+            except Exception:
+                pass
+
         try:
             with open(output_file_path, "w", encoding="utf-8") as f:
                 json.dump(result_data, f, ensure_ascii=False, indent=2)
         except Exception as write_err:
             logger.error(f"[Child PID:{pid}] Failed to write result file: {write_err}")
-
         logger.debug(f"[Child PID:{pid}] Process logic finished. Forcing exit.")
-
-        try:
-            log_file.flush()
-            os.fsync(log_file.fileno())
-            log_file.close()
-        except:
-            pass
-
         logger.debug(
             f"Subprocess exit now. Result score: {result_data.get('score', '')}. "
             f"Result summary: {result_data.get('summary', '')}"
         )
+        try:
+            sys.stdout.flush(), sys.stderr.flush()
+        except:
+            pass
         os._exit(0)
 
 
 COMMON_UTILS = """
 def get_len(data):
-    if data is None: return 0   
+    if data is None: return 0 
     if hasattr(data, 'shape'):
         shape = data.shape
         if not shape:  return 1
         return shape[0] 
     try: return len(data)
     except TypeError: return 1
-    
+
 def get_cols(data):
     if data is None: return 0
-    
+
     if hasattr(data, 'shape'):
         shape = data.shape
         if not shape: return 1
         if len(shape) == 1: return 1
         return shape[1]
-        
+
     if isinstance(data, (list, tuple)):
         if len(data) > 0 and isinstance(data[0], (list, tuple)):
             return len(data[0]) # List of List
         return 1 # List of Scalars
-        
+
     return 1
 
 def check_nan_inf_safe(data):
@@ -212,7 +212,7 @@ def check_nan_inf_safe(data):
             import cupy as cp
             return cp.isnan(data).any().item() or cp.isinf(data).any().item()
 
-        
+
         # 5. SciPy Sparse Matrix
         if hasattr(data, 'data') and hasattr(data, 'tocsr'):
             arr = data.data 
@@ -248,6 +248,14 @@ def evaluate(temp_dir):
 
         assert isinstance(report, str), "The eda() function must return a string."
 
+        MAX_REPORT_LENGTH = 5000
+        if len(report) > MAX_REPORT_LENGTH:
+            return {{
+                "score": 0.0, 
+                "status": "validation_failed", 
+                "summary": f"Report exceeds {{MAX_REPORT_LENGTH}} character limit (actual: {{len(report)}}). Please condense the report content."
+            }}
+
         REQUIRED_PATTERNS = {{
             "Files": r"\*\*Files\*\*:",
             "Target": r"\*\*Target\*\*:",
@@ -255,8 +263,6 @@ def evaluate(temp_dir):
             "Missing": r"\*\*Missing\*\*:",
         }}
         missing_keys = [k for k, p in REQUIRED_PATTERNS.items() if not re.search(p, report)]
-        
-                
         if missing_keys:
             return {{
                 "score": 0.0, 
@@ -311,62 +317,40 @@ def evaluate(temp_dir):
 
         if len(result) != 4:
             return {{"score": 0.0, "status": "validation_failed",
-                    "summary": f"Expected 4 return values (X, y, X_test, test_ids), got {{len(result)}}"}}
+                    "summary": f"Expected 4 return values (X_train, y_train, X_test, test_ids), got {{len(result)}}"}}
 
-        X, y, X_test, test_ids = result
+        X_train, y_train, X_test, test_ids = result
 
-        if get_len(X) == 0: return {{"score": 0.0, "status": "validation_failed",
-                                    "summary": "X (Training Data) is empty."}}
-        if get_len(y) == 0: return {{"score": 0.0, "status": "validation_failed", "summary": "y (Labels) is empty."}}
+        if get_len(X_train) == 0: return {{"score": 0.0, "status": "validation_failed",
+                                    "summary": "X_train is empty."}}
+        if get_len(y_train) == 0: return {{"score": 0.0, "status": "validation_failed", "summary": "y_train is empty."}}
         if get_len(X_test) == 0: return {{"score": 0.0, "status": "validation_failed", "summary": "X_test is empty."}}
 
-        len_X = get_len(X)
-        len_y = get_len(y)
-        if len_X != len_y:
+        len_X_train = get_len(X_train)
+        len_y_train = get_len(y_train)
+        if len_X_train != len_y_train:
             return {{
                 "score": 0.0,
                 "status": "validation_failed",
-                "summary": f"Training sample mismatch: X has {{len_X}} rows, y has {{len_y}} rows."
+                "summary": f"Training sample mismatch: X_train has {{len_X_train}} rows, y_train has {{len_y_train}} rows."
             }}
 
-        len_Xt = get_len(X_test)
-        len_ids = get_len(test_ids)
-        if len_Xt != len_ids:
+        len_X_test = get_len(X_test)
+        len_test_ids = get_len(test_ids)
+        if len_X_test != len_test_ids:
             return {{
                 "score": 0.0,
                 "status": "validation_failed",
-                "summary": f"Test sample mismatch: X_test has {{len_Xt}} rows, test_ids has {{len_ids}} rows."
+                "summary": f"Test sample mismatch: X_test has {{len_X_test}} rows, test_ids has {{len_test_ids}} rows."
             }}
 
-        cols_X = get_cols(X)
-        cols_Xt = get_cols(X_test)
-
-        if cols_X != cols_Xt:
-            return {{
-                "score": 0.0,
-                "status": "validation_failed",
-                "summary": f"Feature dimension mismatch: Train has {{cols_X}} cols, Test has {{cols_Xt}} cols. Models "
-                           f"will likely fail."
-            }}
-
-        if hasattr(X, 'columns') and hasattr(X_test, 'columns'):
-            try:
-                c_train = list(X.columns)
-                c_test = list(X_test.columns)
-
-                if c_train != c_test:
-                    return {{
-                        "score": 0.0,
-                        "status": "validation_failed",
-                        "summary": "Train/Test column names are same but in DIFFERENT ORDER."
-                    }}
-            except:
-                pass
+        cols_train = get_cols(X_train)
+        cols_test = get_cols(X_test)
 
         return {{
             "score": 1.0,
             "status": "success",
-            "summary": f"Data loaded successfully. Train: ({{len_X}}, {{cols_X}}), Test: ({{len_Xt}}, {{cols_Xt}})"
+            "summary": f"Data loaded successfully. Train: ({{len_X_train}}, {{cols_train}}), Test: ({{len_X_test}}, {{cols_test}})"
         }}
 
     except Exception as e:
@@ -380,9 +364,9 @@ def evaluate(temp_dir):
 """
 
 
-# --- Stage 2: Cross Validation ---
-class CrossValidationEvaluator(EvoCoderEvaluator):
-    """evaluate cross validation code"""
+# --- Stage 2: Get Splitter ---
+class GetSplitterEvaluator(EvoCoderEvaluator):
+    """evaluate get_splitter code"""
 
     def _get_evaluate_code(self) -> str:
         return f"""
@@ -391,43 +375,43 @@ import sys, traceback, numpy as np, pandas as pd
 
 def evaluate(temp_dir):
     try:
-        if 'cross_validation' in sys.modules: del sys.modules['cross_validation']
+        if 'get_splitter' in sys.modules: del sys.modules['get_splitter']
         if 'load_data' in sys.modules: del sys.modules['load_data']
-            
+
         if temp_dir not in sys.path: sys.path.insert(0, temp_dir)
         import load_data
-        import cross_validation
+        import get_splitter
 
-        X_sub, y_sub, _, _ = load_data.load_data(validation_mode=True)
-        
+        X_train, y_train, _, _ = load_data.load_data(validation_mode=True)
+
         try:
-            splitter = cross_validation.cross_validation(X_sub, y_sub)
+            splitter = get_splitter.get_splitter(X_train, y_train)
         except Exception as e:
             return {{
                 "score": 0.0, 
                 "status": "validation_failed", 
-                "summary": f"cross_validation instantiation failed: {{str(e)}}", 
+                "summary": f"get_splitter instantiation failed: {{str(e)}}", 
                 "artifacts": {{"traceback": traceback.format_exc()}}
             }}
 
         if not hasattr(splitter, 'split'):
             return {{"score": 0.0, "status": "validation_failed", "summary": "Returned object missing 'split' method."}}
-        
+
         if not hasattr(splitter, 'get_n_splits'):
             return {{"score": 0.0, "status": "validation_failed", "summary": "Returned object missing 'get_n_splits' method."}}
 
         try:
-            generator = splitter.split(X_sub, y_sub)
+            generator = splitter.split(X_train, y_train)
             first_fold = next(generator, None)
-            
+
             if first_fold is None:
                  return {{"score": 0.0, "status": "validation_failed", "summary": "Splitter produced no splits (generator is empty)."}}
-            
+
             train_idx, val_idx = first_fold
-            
+
             if not hasattr(train_idx, '__len__') or not hasattr(val_idx, '__len__'):
-                return {{"score": 0.0, "status": "validation_failed", "summary": "Splitter must yield train/test indices."}}
-                
+                return {{"score": 0.0, "status": "validation_failed", "summary": "Splitter must yield train/val indices."}}
+
             try:
                 intersection = set(train_idx) & set(val_idx)
                 if len(intersection) > 0:
@@ -454,16 +438,16 @@ def evaluate(temp_dir):
                 "artifacts": {{"traceback": traceback.format_exc()}}
             }}
 
-        return {{"score": 1.0, "status": "success", "summary": "cross_validation strategy is valid and executable."}}
+        return {{"score": 1.0, "status": "success", "summary": "get_splitter strategy is valid and executable."}}
 
     except Exception as e:
         return {{"score": 0.0, "status": "validation_failed", "summary": f"Validation logic error: {{str(e)}}", "artifacts": {{"traceback": traceback.format_exc()}}}}
 """
 
 
-# --- Stage 3: Create Features ---
-class CreateFeaturesEvaluator(EvoCoderEvaluator):
-    """evaluate create features code"""
+# --- Stage 3: Preprocess ---
+class PreprocessEvaluator(EvoCoderEvaluator):
+    """evaluate preprocess code"""
 
     def _get_evaluate_code(self) -> str:
         return f"""
@@ -473,83 +457,76 @@ import sys,traceback,copy,pandas as pd,numpy as np
 
 def evaluate(temp_dir):
     try:
-        if 'create_features' in sys.modules: del sys.modules['create_features']
+        if 'preprocess' in sys.modules: del sys.modules['preprocess']
         if 'load_data' in sys.modules: del sys.modules['load_data']
 
         if temp_dir not in sys.path:
             sys.path.insert(0, temp_dir)
 
         import load_data
-        import create_features
+        import preprocess
 
-        X_tr_in, y_tr_in, X_te_in, test_ids = load_data.load_data(validation_mode=True)
+        X_train, y_train, X_test, test_ids = load_data.load_data(validation_mode=True)
 
         try:
-            result = create_features.create_features(X_tr_in, y_tr_in, X_tr_in, y_tr_in, X_te_in)
+            result = preprocess.preprocess(X_train, y_train, X_train, y_train, X_test)
         except Exception as e:
             return {{
                 "score": 0.0,
                 "status": "validation_failed",
-                "summary": f"create_features execution crashed: {{str(e)}}",
+                "summary": f"preprocess execution crashed: {{str(e)}}",
                 "artifacts": {{"traceback": traceback.format_exc()}}
             }}
 
         if not isinstance(result, (tuple, list)) or len(result) != 5:
             return {{"score": 0.0, "status": "validation_failed",
-                    "summary": f"Expected 5 return values (X_tr, y_tr, X_te), got {{type(result)}}"}}
+                    "summary": f"Expected 5 return values, got {{type(result)}}"}}
 
-        X_tr_out, y_tr_out, X_val_out, y_val_out, X_te_out = result
+        X_train_out, y_train_out, X_val_out, y_val_out, X_test_out = result
 
-        if X_tr_out is None or X_te_out is None or X_val_out is None or y_tr_out is None or y_val_out is None:
-            return {{"score": 0.0, "status": "validation_failed", "summary": "Output features cannot be None."}}
+        if X_train_out is None or X_test_out is None or X_val_out is None or y_train_out is None or y_val_out is None:
+            return {{"score": 0.0, "status": "validation_failed", "summary": "Output cannot be None."}}
 
-        if get_len(X_te_out) != get_len(X_te_in):
+        if get_len(X_train_out) != get_len(y_train_out):
             return {{
                 "score": 0.0,
                 "status": "validation_failed",
-                "summary": f"Test set row count changed! Input: {{get_len(X_te_in)}}, Output: {{get_len(X_te_out)}}."
+                "summary": f"Training data misaligned! X_train has {{get_len(X_train_out)}} rows, y_train has {{get_len(y_train_out)}} rows."
             }}
 
-        if get_len(X_tr_out) != get_len(y_tr_out):
-            return {{
-                "score": 0.0,
-                "status": "validation_failed",
-                "summary": f"Training X and y misaligned! X rows: {{get_len(X_tr_out)}}, y rows: {{get_len(y_tr_out)}}."
-            }}
-            
         if get_len(X_val_out) != get_len(y_val_out):
             return {{
                 "score": 0.0,
                 "status": "validation_failed",
-                "summary": f"Validation X and y misaligned! X rows: {{get_len(X_val_out)}}, y rows: {{get_len(y_val_out)}}."
+                "summary": f"Validation data misaligned! X_val has {{get_len(X_val_out)}} rows, y_val has {{get_len(y_val_out)}} rows."
             }}
 
-        cols_tr = get_cols(X_tr_out)
-        cols_te = get_cols(X_te_out)
+        cols_train = get_cols(X_train_out)
+        cols_test = get_cols(X_test_out)
 
-        if cols_tr != cols_te:
+        if cols_train != cols_test:
             return {{
                 "score": 0.0,
                 "status": "validation_failed",
-                "summary": f"Feature columns mismatch! Train has {{cols_tr}} cols, Test has {{cols_te}} cols."
+                "summary": f"Column mismatch! Train has {{cols_train}} cols, Test has {{cols_test}} cols."
             }}
 
-        if check_nan_inf_safe(X_tr_out):
-            return {{"score": 0.0, "status": "validation_failed", "summary": "Output training features contain NaN or Infinity."}}
-            
+        if check_nan_inf_safe(X_train_out):
+            return {{"score": 0.0, "status": "validation_failed", "summary": "Output X_train contains NaN or Infinity."}}
+
         if check_nan_inf_safe(X_val_out):
-            return {{"score": 0.0, "status": "validation_failed", "summary": "Output validation features contain NaN or Infinity."}}
-                                                                             
+            return {{"score": 0.0, "status": "validation_failed", "summary": "Output X_val contains NaN or Infinity."}}
 
-        if hasattr(X_tr_out, 'columns') and hasattr(X_te_out, 'columns'):
-            c_tr = list(X_tr_out.columns)
-            c_te = list(X_te_out.columns)
 
-            if set(c_tr) != set(c_te):
+        if hasattr(X_train_out, 'columns') and hasattr(X_test_out, 'columns'):
+            c_train = list(X_train_out.columns)
+            c_test = list(X_test_out.columns)
+
+            if set(c_train) != set(c_test):
                 return {{"score": 0.0, "status": "validation_failed", "summary": "Train/Test column names set mismatch."}}
 
         return {{"score": 1.0, "status": "success",
-                "summary": f"Features valid. Shape: ({{get_len(X_tr_out)}}, {{get_cols(X_tr_out)}})"}}
+                "summary": f"Preprocess valid. Shape: ({{get_len(X_train_out)}}, {{get_cols(X_train_out)}})"}}
 
     except Exception as e:
         return {{
@@ -573,7 +550,7 @@ import numpy as np,sys,traceback
 
 def evaluate(temp_dir):
     try:
-        keys_to_remove = ['train_and_predict', 'create_features', 'load_data']
+        keys_to_remove = ['train_and_predict', 'preprocess', 'load_data']
         for key in keys_to_remove:
             if key in sys.modules:
                 del sys.modules[key]
@@ -582,7 +559,7 @@ def evaluate(temp_dir):
             sys.path.insert(0, temp_dir)
 
         import load_data
-        import create_features
+        import preprocess
         import train_and_predict
 
         if not hasattr(train_and_predict, 'PREDICTION_ENGINES'):
@@ -593,43 +570,44 @@ def evaluate(temp_dir):
         if not engines:
             return {{"score": 0.0, "status": "validation_failed", "summary": "PREDICTION_ENGINES is empty."}}
 
-        X_sub, y_sub, X_test_sub, _ = load_data.load_data(validation_mode=True)
-        X_feat, y_feat, X_val, y_val, X_test_feat = create_features.create_features(X_sub, y_sub, X_sub, y_sub, X_test_sub)
-
-        X_tr = X_feat
-        y_tr = y_feat
-        len_val = get_len(y_val)
-        len_test = get_len(X_test_feat)
+        X_train, y_train, X_test, _ = load_data.load_data(validation_mode=True)
+        X_train_processed, y_train_processed, X_val_processed, y_val_processed, X_test_processed = preprocess.preprocess(
+            X_train, y_train, X_train, y_train, X_test
+        )
 
         success_count = 0
         errors = []
 
         for name, train_func in engines.items():
             try:
-                oof_preds, test_preds = train_func(
-                    X_tr, y_tr, X_val, y_val, X_test_feat
+                val_preds, test_preds = train_func(
+                    X_train_processed, y_train_processed, X_val_processed, y_val_processed, X_test_processed
                 )
 
-                if oof_preds is None or test_preds is None:
+                if val_preds is None or test_preds is None:
                     errors.append(f"Model '{{name}}' returned None.")
                     continue
 
-                if get_len(oof_preds) != len_val:
-                    errors.append(f"Model '{{name}}' OOF shape mismatch: expected {{len_val}}, got {{get_len(oof_preds)}}")
+                if get_len(val_preds) == 0:
+                    errors.append(f"Model '{{name}}' val_preds is empty")
                     continue
 
-                if get_len(test_preds) != len_test:
-                    errors.append(f"Model '{{name}}' Test shape mismatch: expected {{len_test}}, got {{get_len(test_preds)}}")
+                if get_len(test_preds) == 0:
+                    errors.append(f"Model '{{name}}' test_preds is empty")
                     continue
 
-                if check_nan_inf_safe(oof_preds):
-                    errors.append(f"Model '{{name}}' produced NaNs or Infs in validation predictions.")
+                if check_nan_inf_safe(val_preds):
+                    errors.append(f"Model '{{name}}' produced NaNs or Infs in val_preds.")
+                    continue
+
+                if check_nan_inf_safe(test_preds):
+                    errors.append(f"Model '{{name}}' produced NaNs or Infs in test_preds.")
                     continue
 
                 success_count += 1
 
             except Exception as model_e:
-                errors.append(f"Model '{{name}}' crashed: {{str(model_e)}}")
+                errors.append(f"Model '{{name}}' crashed: {{str(model_e)}}\\nTraceback: {{traceback.format_exc()}}")
 
         total_engines = len(engines)
         if success_count == total_engines:
@@ -663,50 +641,55 @@ import sys, traceback, numpy as np, pandas as pd
 
 def evaluate(temp_dir):
     try:
-        keys_to_remove = ['ensemble', 'train_and_predict', 'create_features', 'load_data']
+        keys_to_remove = ['ensemble', 'train_and_predict', 'preprocess', 'load_data']
         for key in keys_to_remove:
             if key in sys.modules:
                 del sys.modules[key]
         if temp_dir not in sys.path:
             sys.path.insert(0, temp_dir)
-            
+
         import load_data
-        import create_features
+        import preprocess
         import train_and_predict
         import ensemble
-        
-        X_sub, y_sub, X_test_sub, _ = load_data.load_data(validation_mode=True)
 
-        X_feat, y_feat, X_val, y_val, X_test_feat = create_features.create_features(
-            X_sub, y_sub, X_sub, y_sub, X_test_sub
+        X_train, y_train, X_test, _ = load_data.load_data(validation_mode=True)
+
+        X_train_processed, y_train_processed, X_val_processed, y_val_processed, X_test_processed = preprocess.preprocess(
+            X_train, y_train, X_train, y_train, X_test
         )
 
-        X_tr = X_feat
-        y_tr = y_feat
-        N_TEST = get_len(X_test_feat)
-
         engines = train_and_predict.PREDICTION_ENGINES
-        
-        all_oof_preds = {{}}
+
+        all_val_preds = {{}}
         all_test_preds = {{}}
+
+        val_preds = None
+        test_preds = None
+
         for model_name, train_func in engines.items():
             try:
-                oof_preds, test_preds = train_func(
-                    X_tr, y_tr, X_val, y_val, X_test_feat
+                val_preds, test_preds = train_func(
+                    X_train_processed, y_train_processed, X_val_processed, y_val_processed, X_test_processed
                 )
-                
-                if oof_preds is not None and test_preds is not None:
-                    all_oof_preds[model_name] = oof_preds
-                    all_test_preds[model_name] = test_preds
-                    
+                if val_preds is not None and test_preds is not None:
+                    break
             except Exception as e:
                 continue
-        if not all_oof_preds or not all_test_preds:
-            return {{"score": 0.0, "status": "validation_failed",
-                    "summary": "No valid predictions from any model."}}
+
+        if val_preds is None or test_preds is None:
+            return {{
+                "score": 0.0,
+                "status": "validation_failed",
+                "summary": "All models failed to produce valid outputs."
+            }}
+
+        for model_name in engines.keys():
+            all_val_preds[model_name] = val_preds
+            all_test_preds[model_name] = test_preds
 
         try:
-            final_pred = ensemble.ensemble(all_oof_preds, all_test_preds, y_feat)
+            final_preds = ensemble.ensemble(all_val_preds, all_test_preds, y_train_processed)
         except Exception as e:
             return {{
                 "score": 0.0,
@@ -715,20 +698,19 @@ def evaluate(temp_dir):
                 "artifacts": {{"traceback": traceback.format_exc()}}
             }}
 
-        if final_pred is None:
+        if final_preds is None:
             return {{"score": 0.0, "status": "validation_failed", "summary": "Ensemble returned None."}}
 
-        len_out = get_len(final_pred)
-        if len_out != N_TEST:
+        len_out = get_len(final_preds)
+        if len_out == 0:
             return {{
                 "score": 0.0,
                 "status": "validation_failed",
-                "summary": f"Ensemble output length mismatch. Expected {{N_TEST}} (test set size), got {{len_out}}."
+                "summary": f"Ensemble output is empty."
             }}
 
-        if check_nan_inf_safe(final_pred):
-            return {{"score": 0.0, "status": "validation_failed", "summary": "Ensemble output contains NaN or "
-                                                                            "Infinity."}}
+        if check_nan_inf_safe(final_preds):
+            return {{"score": 0.0, "status": "validation_failed", "summary": "Ensemble output contains NaN or Infinity."}}
 
         return {{"score": 1.0, "status": "success", "summary": "Ensemble logic validated successfully."}}
 
@@ -756,8 +738,8 @@ def evaluate(temp_dir):
         if temp_dir not in sys.path: sys.path.insert(0, temp_dir)
         # import all modules
         import load_data
-        import cross_validation
-        import create_features
+        import get_splitter
+        import preprocess
         import train_and_predict
         import ensemble
         import workflow
@@ -774,9 +756,9 @@ def evaluate(temp_dir):
             }}
 
         assert isinstance(result, dict), "The workflow() function must return a dict."
-        
+
         # check required keys
-        REQUIRED_KEYS = ["submission_file_path", "model_scores", "prediction_stats"]
+        REQUIRED_KEYS = ["submission_file_path", "prediction_stats"]
         missing_keys = [k for k in REQUIRED_KEYS if k not in result]
         if missing_keys:
             return {{
@@ -788,7 +770,7 @@ def evaluate(temp_dir):
         # check prediction_stats structure
         prediction_stats = result["prediction_stats"]
         assert isinstance(prediction_stats, dict), "prediction_stats must be a dict."
-        
+
         REQUIRED_STAT_KEYS = ["oof", "test"]
         missing_stat_keys = [k for k in REQUIRED_STAT_KEYS if k not in prediction_stats]
         if missing_stat_keys:
@@ -803,7 +785,7 @@ def evaluate(temp_dir):
         for stat_key in REQUIRED_STAT_KEYS:
             stat_obj = prediction_stats[stat_key]
             assert isinstance(stat_obj, dict), f"prediction_stats[{{stat_key}}] must be a dict."
-            
+
             missing_fields = [f for f in REQUIRED_FIELDS if f not in stat_obj]
             if missing_fields:
                 return {{
@@ -812,7 +794,7 @@ def evaluate(temp_dir):
                     "summary": f"Missing fields in prediction_stats[{{stat_key}}]: {{missing_fields}}",
                     "artifacts": {{"workflow": result}}
                 }}
-            
+
             # check field types are numeric
             for field in REQUIRED_FIELDS:
                 value = stat_obj[field]
@@ -829,7 +811,7 @@ def evaluate(temp_dir):
             "summary": "workflow validation passed and submission file created.",
             "artifacts": {{"workflow": result}}
         }}
-        
+
     except Exception as e:
         return {{"score": 0.0, "status": "validation_failed", "summary": f"{{e}}", "artifacts": {{"traceback": traceback.format_exc()}}}}
 """
