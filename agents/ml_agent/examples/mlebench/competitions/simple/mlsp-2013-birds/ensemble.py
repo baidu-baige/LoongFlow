@@ -1,109 +1,92 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-from typing import Any, Dict, List
-
 import numpy as np
-import pandas as pd
+from sklearn import metrics
+from typing import Dict, List, Any
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/mlsp-2013-birds/prepared/public"
-OUTPUT_DATA_PATH = "output/b4d4dfce-4367-41a9-8cac-a59279a6d65f/11/executor/output"
-
-# Type Hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-
+# Task-adaptive type definitions for multi-label bird classification
+y = np.ndarray           # (N, 19) float32 ground truth matrix
+Predictions = np.ndarray # (N, 19) float32 probability matrix
 
 def ensemble(
-    all_oof_preds: Dict[str, DT],
-    all_test_preds: Dict[str, List[DT]],
-    y_true_full: DT
-) -> DT:
+    all_val_preds: Dict[str, Predictions],
+    all_test_preds: Dict[str, Predictions],
+    y_val: y,
+) -> Predictions:
     """
-    Ensembles predictions from multiple models using Strict Simple Averaging.
-
-    Strategy:
-    1. Aggregates fold predictions for each model (Bagging) using mean.
-    2. Computes the grand average across all models (Simple Average).
-    3. No weighting or optimization logic is applied to prevent overfitting on small/sparse data.
+    Aggregates multi-label predictions across folds and models into a final robust output.
+    
+    This implementation combines the outputs of the Triple-GBDT Ensemble (XGBoost, 
+    LightGBM, CatBoost) to maximize generalization and minimize error correlation.
+    Following the Technical Specification, this stage performs a weighted arithmetic 
+    averaging across 15 model instances (5 folds * 3 architectures). 
+    
+    Since the upstream 'train_and_predict' stage already applies the 0.4/0.3/0.3 
+    weighting for the individual models within each fold, this module executes 
+    the final cross-validation fold aggregation.
 
     Args:
-        all_oof_preds: Dictionary of {model_name: oof_predictions}. (Unused for simple average)
-        all_test_preds: Dictionary of {model_name: [pred_fold_1, pred_fold_2, ...]}.
-        y_true_full: The Ground Truth labels. (Unused for simple average)
+        all_val_preds (Dict[str, Predictions]): Dictionary mapping fold identifiers 
+                                               to out-of-fold validation predictions.
+        all_test_preds (Dict[str, Predictions]): Dictionary mapping fold identifiers 
+                                                to test set predictions.
+        y_val (y): Ground truth labels for the training set (multi-label matrix).
 
     Returns:
-        DT: Final predictions for the Test set.
+        Predictions: Final aggregated test prediction matrix of shape (N_test, 19).
     """
+    print("Stage 5: Starting Ensemble Stage (Cross-Fold Aggregation)...")
+    
+    model_keys = list(all_test_preds.keys())
+    if not model_keys:
+        raise ValueError("Ensemble Failure: No test predictions provided in all_test_preds.")
 
-    # Helper to ensure data is in numpy format
-    def to_numpy(data: Any) -> np.ndarray:
-        if isinstance(data, pd.DataFrame):
-            return data.values
-        if isinstance(data, pd.Series):
-            return data.values
-        if isinstance(data, np.ndarray):
-            return data
-        if isinstance(data, list):
-            return np.array(data)
-        return np.array(data)
+    num_folds = len(model_keys)
+    print(f"Aggregating predictions from {num_folds} cross-validation folds.")
 
-    model_averaged_preds = []
+    # 1. Performance Diagnostics (OOF Multi-Label AUC)
+    # The competition metric is Macro-AUC across 19 species.
+    # We evaluate individual fold performance if the validation predictions match the label shape.
+    for fold_key in model_keys:
+        if fold_key in all_val_preds:
+            v_preds = all_val_preds[fold_key]
+            # Check if validation predictions align with provided ground truth
+            if y_val is not None and v_preds.shape == y_val.shape:
+                try:
+                    fold_auc = metrics.roc_auc_score(y_val, v_preds, average='macro')
+                    print(f"Fold '{fold_key}' OOF Macro-AUC: {fold_auc:.4f}")
+                except Exception as e:
+                    print(f"Diagnostic Warning: Could not calculate AUC for {fold_key}: {e}")
 
-    # Step 1: Aggregate fold predictions for each model (Bagging)
-    for model_name, fold_preds_list in all_test_preds.items():
-        if not fold_preds_list:
-            continue
+    # 2. Weighted Arithmetic Averaging
+    # As per the specification, the final output must reflect a 0.4/0.3/0.3 blend.
+    # Because each fold's prediction is already weighted by train_and_predict, 
+    # taking the arithmetic mean across folds preserves this global distribution.
+    
+    test_preds_list = []
+    for fold_key in model_keys:
+        fold_preds = all_test_preds[fold_key]
+        
+        # Integrity checks: Ensure no NaNs or Infs propagate to final submission
+        if np.isnan(fold_preds).any() or np.isinf(fold_preds).any():
+            raise ValueError(f"Data Integrity Error: Model '{fold_key}' contains NaN or Inf values.")
+            
+        test_preds_list.append(fold_preds.astype(np.float64))
 
-        # Convert all fold predictions to numpy arrays
-        try:
-            fold_preds_np = [to_numpy(pred) for pred in fold_preds_list]
-        except Exception as e:
-            print(f"Ensemble Warning: Error converting predictions for model '{model_name}': {e}")
-            continue
+    # Efficient aggregation using NumPy
+    # Shape: (N_folds, N_test, 19) -> (N_test, 19)
+    stacked_preds = np.stack(test_preds_list, axis=0)
+    final_test_preds = np.mean(stacked_preds, axis=0).astype(np.float32)
 
-        if not fold_preds_np:
-            continue
+    # 3. Post-processing and Constraint Enforcement
+    # The bird classification task requires probabilities in range [0, 1].
+    # Although GBDT outputs are typically bounded, we explicitly clip to guarantee compliance.
+    final_test_preds = np.clip(final_test_preds, 0.0, 1.0)
+    
+    # Final check for numerical consistency
+    if np.isnan(final_test_preds).any():
+        raise ValueError("Ensemble Failure: NaN values generated during final aggregation.")
 
-        # Check shape consistency across folds
-        ref_shape = fold_preds_np[0].shape
-        valid_folds = []
-        for p in fold_preds_np:
-            if p.shape == ref_shape:
-                valid_folds.append(p)
-            else:
-                print(
-                    f"Ensemble Warning: Shape mismatch in folds for model '{model_name}'. Got {p.shape}, expected {ref_shape}. Skipping fold.")
-
-        if not valid_folds:
-            continue
-
-        # Stack arrays along a new axis to compute stats across folds
-        # Shape: (n_folds, n_samples, n_classes)
-        stacked_folds = np.array(valid_folds)
-
-        # Compute the mean prediction across all folds for this model
-        # Shape: (n_samples, n_classes)
-        model_mean = np.mean(stacked_folds, axis=0)
-
-        model_averaged_preds.append(model_mean)
-
-    if not model_averaged_preds:
-        raise ValueError("No valid predictions provided in all_test_preds to ensemble.")
-
-    # Step 2: Choose Strategy (Strict Simple Average)
-    # Shape: (n_models, n_samples, n_classes)
-    meta_stack = np.array(model_averaged_preds)
-
-    # Step 3: Compute final ensemble
-    # Shape: (n_samples, n_classes)
-    final_predictions = np.mean(meta_stack, axis=0)
-
-    # Ensure stability by replacing NaNs and Infinities
-    final_predictions = np.nan_to_num(final_predictions, nan=0.0, posinf=1.0, neginf=0.0)
-
-    # Clip probabilities to [0, 1] range
-    final_predictions = np.clip(final_predictions, 0.0, 1.0)
-
-    return final_predictions
+    n_test, n_species = final_test_preds.shape
+    print(f"Ensemble complete. Generated predictions for {n_test} recordings and {n_species} species.")
+    print(f"Final Prediction Stats - Mean: {np.mean(final_test_preds):.4f}, Max: {np.max(final_test_preds):.4f}")
+    
+    return final_test_preds

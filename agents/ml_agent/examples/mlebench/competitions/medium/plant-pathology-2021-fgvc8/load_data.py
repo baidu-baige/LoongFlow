@@ -1,85 +1,73 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-import os
-from typing import Tuple
-
 import pandas as pd
+import numpy as np
+import os
 from sklearn.preprocessing import MultiLabelBinarizer
+from typing import Tuple, Any
 
-BASE_DATA_PATH = "/root/workspace/evolux_ml/output/mlebench/plant-pathology-2021-fgvc8/prepared/public"
-OUTPUT_DATA_PATH = "output/1ae93cb9-976c-4242-a6ab-6fcbc92f5502/1/executor/output"
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-01/evolux/output/mlebench/plant-pathology-2021-fgvc8/prepared/public"
+OUTPUT_DATA_PATH = "output/e81e4df9-fbfb-4465-8b24-4be8ee1f51f4/1/executor/output"
 
-# For type hinting, DT is assumed to be pandas DataFrame or Series
-DT = pd.DataFrame | pd.Series
+# Define concrete types for this task
+X = pd.Series    # Series of full image paths
+y = np.ndarray  # Binary matrix (N, 6)
+Ids = pd.Series  # Series of image filenames (e.g., "85f8cb619c66b863.jpg")
 
-
-def load_data(validation_mode: bool = False) -> Tuple[DT, DT, DT, DT]:
+def load_data(validation_mode: bool = False) -> Tuple[X, y, X, Ids]:
     """
-    Loads, splits, and returns the initial datasets for the Plant Pathology 2021 competition.
+    Loads and prepares the datasets for the Plant Pathology 2021 challenge.
+    Converts space-delimited labels into binary multi-label format and constructs image paths.
+    """
+    print(f"Loading data from {BASE_DATA_PATH}...")
     
-    Args:
-        validation_mode: Controls the data loading behavior.
-            - False (default): Load the complete dataset.
-            - True: Load a small subset (≤100 rows).
-
-    Returns:
-        Tuple[DT, DT, DT, DT]: (X, y, X_test, test_ids)
-    """
+    # Define paths
     train_csv_path = os.path.join(BASE_DATA_PATH, "train.csv")
     test_csv_path = os.path.join(BASE_DATA_PATH, "sample_submission.csv")
-    train_images_dir = os.path.join(BASE_DATA_PATH, "train_images")
-    test_images_dir = os.path.join(BASE_DATA_PATH, "test_images")
+    train_img_dir = os.path.join(BASE_DATA_PATH, "train_images")
+    test_img_dir = os.path.join(BASE_DATA_PATH, "test_images")
 
-    # Load dataframes
+    # Verify critical files
+    if not os.path.exists(train_csv_path):
+        raise FileNotFoundError(f"Missing train metadata: {train_csv_path}")
+    if not os.path.exists(test_csv_path):
+        raise FileNotFoundError(f"Missing test metadata: {test_csv_path}")
+
+    # Load metadata
+    train_df = pd.read_csv(train_csv_path)
+    test_df = pd.read_csv(test_csv_path)
+
+    # Verify a sample image to ensure directory structure is correct
+    sample_img = train_df['image'].iloc[0]
+    if not os.path.exists(os.path.join(train_img_dir, sample_img)):
+        raise FileNotFoundError(f"Image directory mismatch: {os.path.join(train_img_dir, sample_img)} not found.")
+
+    # Multi-label binarization
+    # Specification classes: ['scab', 'healthy', 'frog_eye_leaf_spot', 'rust', 'complex', 'powdery_mildew']
+    target_classes = ['scab', 'healthy', 'frog_eye_leaf_spot', 'rust', 'complex', 'powdery_mildew']
+    mlb = MultiLabelBinarizer(classes=target_classes)
+    
+    # Split labels by space and transform
+    labels_split = train_df['labels'].str.split(' ')
+    y_train = mlb.fit_transform(labels_split).astype(np.float32)
+    
+    # Construct full paths for training images
+    X_train = train_df['image'].apply(lambda x: os.path.join(train_img_dir, x))
+    
+    # Prepare test data
+    # In this competition, test_images is where the actual test images reside.
+    # sample_submission.csv provides the IDs.
+    X_test = test_df['image'].apply(lambda x: os.path.join(test_img_dir, x))
+    test_ids = test_df['image']
+
+    # Validation mode subsetting
     if validation_mode:
-        train_df = pd.read_csv(train_csv_path, nrows=100)
-        test_df = pd.read_csv(test_csv_path, nrows=100)
-    else:
-        train_df = pd.read_csv(train_csv_path)
-        test_df = pd.read_csv(test_csv_path)
+        print("Validation mode enabled: subsetting data to 200 rows.")
+        limit = 200
+        X_train = X_train.iloc[:limit]
+        y_train = y_train[:limit]
+        X_test = X_test.iloc[:limit]
+        test_ids = test_ids.iloc[:limit]
 
-    # Multi-label transformation
-    # Defined base labels from dataset description and EDA
-    classes = ['scab', 'healthy', 'frog_eye_leaf_spot', 'rust', 'complex', 'powdery_mildew']
-    mlb = MultiLabelBinarizer(classes=classes)
+    print(f"Data loading complete. Train: {len(X_train)} samples, Test: {len(X_test)} samples.")
+    print(f"Target classes: {target_classes}")
 
-    # Each row in 'labels' is a space-delimited string
-    y_labels = train_df['labels'].apply(lambda x: x.split())
-    y_encoded = mlb.fit_transform(y_labels)
-    y = pd.DataFrame(y_encoded, columns=classes)
-
-    # Features X: Store image filenames (relative to the train_images directory)
-    X = train_df[['image']].rename(columns={'image': 'image_path'})
-
-    # Features X_test: Consistent structure with X
-    X_test = test_df[['image']].rename(columns={'image': 'image_path'})
-
-    # Identifiers for test data
-    test_ids = test_df['image'].copy()
-
-    # Verification of image existence
-    # Using set lookup for efficiency
-    actual_train_files = set(os.listdir(train_images_dir))
-    for img_name in X['image_path']:
-        if img_name not in actual_train_files:
-            raise FileNotFoundError(f"Training image {img_name} missing from {train_images_dir}")
-
-    actual_test_files = set(os.listdir(test_images_dir))
-    for img_name in X_test['image_path']:
-        if img_name not in actual_test_files:
-            raise FileNotFoundError(f"Test image {img_name} missing from {test_images_dir}")
-
-    # Final consistency checks
-    if X.empty or y.empty or X_test.empty or test_ids.empty:
-        raise ValueError("One or more returned datasets are empty.")
-
-    if len(X) != len(y):
-        raise ValueError("X and y row counts do not match.")
-
-    if len(X_test) != len(test_ids):
-        raise ValueError("X_test and test_ids row counts do not match.")
-
-    return X, y, X_test, test_ids
+    return X_train, y_train, X_test, test_ids

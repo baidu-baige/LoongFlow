@@ -1,142 +1,174 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-from typing import Any, Callable, Dict, Tuple
-
-import numpy as np
-import pandas as pd
+from typing import Tuple, Any, Dict, Callable
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
-from torchvision.models import EfficientNet_B4_Weights, efficientnet_b4
+import timm
+import numpy as np
+from torch.cuda.amp import GradScaler, autocast
 
-BASE_DATA_PATH = "/root/workspace/evolux_ml/output/mlebench/plant-pathology-2021-fgvc8/prepared/public"
-OUTPUT_DATA_PATH = "output/1ae93cb9-976c-4242-a6ab-6fcbc92f5502/1/executor/output"
+# Task-adaptive type definitions
+X = Dataset    # PyTorch Dataset for lazy loading and on-the-fly augmentation
+y = np.ndarray  # Binary label matrix (N, 6)
+Predictions = np.ndarray # Model predictions type (N, 6 probabilities)
 
-# Type hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-PredictionFunction = Callable[[DT, DT, DT, DT, DT, Any], Tuple[DT, DT]]
+# Model Function Type
+ModelFn = Callable[
+    [X, y, X, y, X],
+    Tuple[Predictions, Predictions]
+]
 
+# ===== Helper Classes =====
 
-class LeafDataset(Dataset):
+class LabelWrapper(Dataset):
     """
-    Custom Dataset for loading pre-processed image features and labels.
+    Utility wrapper to pair the feature Dataset with its corresponding target array.
+    This allows seamless integration with PyTorch DataLoader while maintaining the
+    pipeline's separated X/y structure.
     """
+    def __init__(self, dataset: Dataset, labels: np.ndarray = None):
+        self.dataset = dataset
+        self.labels = labels
 
-    def __init__(self, features_df: pd.DataFrame, labels_df: pd.DataFrame = None):
-        # features_df['image_features'] contains numpy arrays of shape (380, 380, 3)
-        self.features = features_df['image_features'].tolist()
-        self.labels = labels_df.values if labels_df is not None else None
+    def __len__(self) -> int:
+        return len(self.dataset)
 
-    def __len__(self):
-        return len(self.features)
-
-    def __getitem__(self, idx):
-        # Convert numpy array (H, W, C) to torch tensor (C, H, W)
-        img = self.features[idx]
-        img = torch.from_numpy(img).permute(2, 0, 1).float()
-
+    def __getitem__(self, idx: int):
+        # Extract features (image tensor) from the upstream Dataset
+        features = self.dataset[idx]
+        
         if self.labels is not None:
-            label = torch.from_numpy(self.labels[idx]).float()
-            return img, label
-        return img
-
+            # Pair with label for training/validation
+            label = torch.tensor(self.labels[idx], dtype=torch.float32)
+            return features, label
+        
+        return features
 
 # ===== Training Functions =====
 
-def train_efficientnet_b4(
-    X_train: DT,
-    y_train: DT,
-    X_val: DT,
-    y_val: DT,
-    X_test: DT
-) -> Tuple[DT, DT]:
+def train_convnext_large(
+    X_train: X,
+    y_train: y,
+    X_val: X,
+    y_val: y,
+    X_test: X
+) -> Tuple[Predictions, Predictions]:
     """
-    Trains an EfficientNet-B4 model and returns multi-label probability predictions.
+    Trains a ConvNeXt-Large model and returns predictions for validation and test sets.
+    Utilizes multi-GPU acceleration and mixed-precision training.
     """
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    # Step 1: Prepare Datasets and DataLoaders
-    # Batch size 16 as specified in the plan
-    train_ds = LeafDataset(X_train, y_train)
-    val_ds = LeafDataset(X_val, y_val)
-    test_ds = LeafDataset(X_test, None)
-
-    train_loader = DataLoader(train_ds, batch_size=16, shuffle=True, num_workers=4, pin_memory=True)
-    val_loader = DataLoader(val_ds, batch_size=16, shuffle=False, num_workers=4, pin_memory=True)
-    test_loader = DataLoader(test_ds, batch_size=16, shuffle=False, num_workers=4, pin_memory=True)
-
-    # Step 2: Build and configure model
-    # Use weights if available (torchvision >= 0.13), else fallback to pretrained=True
-    try:
-        model = efficientnet_b4(weights=EfficientNet_B4_Weights.IMAGENET1K_V1)
-    except:
-        model = efficientnet_b4(pretrained=True)
-
-    # Replace the final classifier layer for 6 output nodes (multi-label)
-    in_features = model.classifier[1].in_features
-    model.classifier[1] = nn.Linear(in_features, 6)
+    print("Initiating ConvNeXt-Large Training Engine...")
+    
+    # --- Configuration ---
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    num_gpus = torch.cuda.device_count()
+    
+    # Specification parameters
+    batch_size = 32
+    num_epochs = 30
+    learning_rate = 1e-4
+    weight_decay = 1e-2
+    smoothing = 0.1
+    num_workers = 12  # Leveraging 36 CPU cores
+    
+    # --- Data Preparation ---
+    train_ds = LabelWrapper(X_train, y_train)
+    val_ds = LabelWrapper(X_val, y_val)
+    test_ds = LabelWrapper(X_test)
+    
+    train_loader = DataLoader(
+        train_ds, 
+        batch_size=batch_size, 
+        shuffle=True, 
+        num_workers=num_workers, 
+        pin_memory=True,
+        drop_last=True if len(train_ds) > batch_size else False
+    )
+    val_loader = DataLoader(val_ds, batch_size=batch_size * 2, shuffle=False, num_workers=num_workers)
+    test_loader = DataLoader(test_ds, batch_size=batch_size * 2, shuffle=False, num_workers=num_workers)
+    
+    # --- Model Build ---
+    print(f"Loading pretrained ConvNeXt-Large backbone. Detected {num_gpus} GPU(s).")
+    # Using 'convnext_large' which is robust for fine-grained leaf classification
+    model = timm.create_model('convnext_large', pretrained=True, num_classes=6)
+    
+    if num_gpus > 1:
+        model = nn.DataParallel(model)
     model.to(device)
-
-    # Step 3: Configure Loss, Optimizer, and Scheduler
+    
+    # --- Optimization Setup ---
+    # BCEWithLogitsLoss is standard for multi-label classification
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-2)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, eta_min=1e-6)
-
-    # Step 4: Training Loop
-    epochs = 10
-    for epoch in range(epochs):
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    
+    steps_per_epoch = len(train_loader)
+    scheduler = optim.lr_scheduler.OneCycleLR(
+        optimizer, 
+        max_lr=learning_rate, 
+        epochs=num_epochs, 
+        steps_per_epoch=steps_per_epoch
+    )
+    
+    scaler = GradScaler()
+    
+    # --- Training Loop ---
+    for epoch in range(num_epochs):
         model.train()
-        running_loss = 0.0
-        for imgs, labels in train_loader:
-            imgs, labels = imgs.to(device), labels.to(device)
-
+        epoch_loss = 0.0
+        
+        for imgs, targets in train_loader:
+            imgs, targets = imgs.to(device), targets.to(device)
+            
+            # Label Smoothing for multi-label binary targets
+            # y_smoothed = y * (1 - alpha) + alpha / num_options (where num_options=2 for each class)
+            with torch.no_grad():
+                targets = targets * (1.0 - smoothing) + 0.5 * smoothing
+            
             optimizer.zero_grad()
-            outputs = model(imgs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-
-            running_loss += loss.item() * imgs.size(0)
-
-        scheduler.step()
-        epoch_loss = running_loss / len(train_loader.dataset)
-        print(f"Epoch {epoch + 1}/{epochs}, Loss: {epoch_loss:.4f}")
-
-    # Step 5: Inference on Validation and Test sets
-    model.eval()
-
-    def get_predictions(loader):
-        preds = []
+            
+            # Using Mixed Precision (autocast) for speed and memory efficiency on H20
+            with autocast():
+                logits = model(imgs)
+                loss = criterion(logits, targets)
+            
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            scheduler.step()
+            
+            epoch_loss += loss.item()
+            
+        print(f"Epoch [{epoch+1}/{num_epochs}] - Mean Loss: {epoch_loss / max(1, steps_per_epoch):.4f}")
+        
+    # --- Inference ---
+    def generate_predictions(loader: DataLoader) -> np.ndarray:
+        model.eval()
+        all_probs = []
         with torch.no_grad():
             for data in loader:
-                # Handle both (img, label) and (img,) cases
-                if isinstance(data, (list, tuple)):
-                    imgs = data[0].to(device)
-                else:
-                    imgs = data.to(device)
-
-                outputs = torch.sigmoid(model(imgs))
-                preds.append(outputs.cpu().numpy())
-        return np.vstack(preds)
-
-    val_probs = get_predictions(val_loader)
-    test_probs = get_predictions(test_loader)
-
-    # Create DataFrames for output, preserving indices and columns
-    validation_predictions = pd.DataFrame(val_probs, columns=y_train.columns, index=X_val.index)
-    test_predictions = pd.DataFrame(test_probs, columns=y_train.columns, index=X_test.index)
-
-    # Final check for NaN/Inf
-    if validation_predictions.isna().any().any() or test_predictions.isna().any().any():
-        raise ValueError("Model predictions contain NaN values.")
-
-    return validation_predictions, test_predictions
-
+                # Handle data from both validation (returns tuple with labels) and test (returns raw tensor)
+                imgs = data[0] if isinstance(data, (list, tuple)) else data
+                imgs = imgs.to(device)
+                with autocast():
+                    logits = model(imgs)
+                    probs = torch.sigmoid(logits)
+                all_probs.append(probs.cpu().numpy())
+        return np.concatenate(all_probs, axis=0)
+    
+    print("Generating validation and test predictions...")
+    val_preds = generate_predictions(val_loader)
+    test_preds = generate_predictions(test_loader)
+    
+    # Resource Management: Release GPU memory for subsequent pipeline stages
+    model.to('cpu')
+    del model
+    torch.cuda.empty_cache()
+    
+    print("ConvNeXt-Large training and prediction completed.")
+    return val_preds, test_preds
 
 # ===== Model Registry =====
-PREDICTION_ENGINES: Dict[str, PredictionFunction] = {
-    "efficientnet_b4": train_efficientnet_b4,
+# Register the SOTA vision backbone training function
+PREDICTION_ENGINES: Dict[str, ModelFn] = {
+    "convnext_large": train_convnext_large,
 }

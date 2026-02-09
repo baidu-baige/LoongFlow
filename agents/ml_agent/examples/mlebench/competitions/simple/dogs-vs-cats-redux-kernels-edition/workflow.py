@@ -1,94 +1,110 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
 import os
-
 import numpy as np
 import pandas as pd
-from sklearn.metrics import log_loss
-
-from create_features import create_features
-from cross_validation import cross_validation
-from ensemble import ensemble
+import torch
 from load_data import load_data
+from preprocess import preprocess
+from get_splitter import get_splitter
 from train_and_predict import PREDICTION_ENGINES
+from ensemble import ensemble
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/dogs-vs-cats-redux-kernels-edition/prepared/public"
-OUTPUT_DATA_PATH = "output/7dbf3696-f36d-4f87-8e59-bb45d92869c5/1/executor/output"
-
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-01/evolux/output/mlebench/dogs-vs-cats-redux-kernels-edition/prepared/public"
+OUTPUT_DATA_PATH = "output/25e7371d-bfe6-47c9-b200-bdf664ef9932/2/executor/output"
 
 def workflow() -> dict:
     """
     Orchestrates the complete end-to-end machine learning pipeline in production mode.
-    
-    1. Loads the full dataset.
-    2. Initializes a Stratified 5-fold cross-validation strategy.
-    3. Iteratively trains models (EfficientNet-B0) on each fold.
-    4. Collects Out-Of-Fold (OOF) and test set predictions.
-    5. Ensembles the predictions across all folds and models.
-    6. Generates and saves the final submission file.
+
+    This implementation executes a 5-fold cross-validation strategy, utilizing dual GPUs 
+    via DDP for high-capacity model training, followed by temperature-scaled ensembling.
     """
-    # Ensure the output directory exists
-    os.makedirs(OUTPUT_DATA_PATH, exist_ok=True)
+    print("Workflow: Starting production pipeline execution.")
 
-    # Step 1: Load the full dataset
-    X, y, X_test, test_ids = load_data(validation_mode=False)
+    # 1. Load full dataset
+    X_train_full, y_train_full, X_test, test_ids = load_data(validation_mode=False)
 
-    # Step 2: Define cross-validation strategy
-    cv = cross_validation(X, y)
+    # 2. Set up data splitting strategy
+    splitter = get_splitter(X_train_full, y_train_full)
 
-    # Step 3: Initialize placeholders for predictions
-    # all_oof_preds maps model name to a full-length array of OOF predictions
-    all_oof_preds = {name: np.zeros(len(y)) for name in PREDICTION_ENGINES}
-    # all_test_preds maps model name to a list of test predictions (one per fold)
-    all_test_preds = {name: [] for name in PREDICTION_ENGINES}
+    # 3. Initialize prediction containers
+    # oof_preds: Stores validation predictions for the entire training set
+    # test_preds_list: Stores test predictions from each fold's model ensemble
+    oof_preds = np.zeros(len(y_train_full))
+    test_preds_list = []
 
-    # Step 4: Iterate through folds
-    for fold, (train_idx, val_idx) in enumerate(cv.split(X, y)):
-        # Split data into training and validation sets for the current fold
-        X_train_fold, X_val_fold = X.iloc[train_idx], X.iloc[val_idx]
-        y_train_fold, y_val_fold = y.iloc[train_idx], y.iloc[val_idx]
-
-        # Apply feature engineering (metadata standardization)
-        X_tr, y_tr, X_v, y_v, X_te = create_features(
-            X_train_fold, y_train_fold, X_val_fold, y_val_fold, X_test
+    # 4. Cross-Validation Loop
+    print(f"Workflow: Beginning {splitter.get_n_splits()}-fold cross-validation.")
+    for fold, (train_idx, val_idx) in enumerate(splitter.split(X_train_full, y_train_full)):
+        print(f"\n--- Processing Fold {fold + 1}/{splitter.get_n_splits()} ---")
+        
+        # Split train/validation data for this fold
+        X_tr, y_tr = X_train_full.iloc[train_idx], y_train_full.iloc[train_idx]
+        X_va, y_va = X_train_full.iloc[val_idx], y_train_full.iloc[val_idx]
+        
+        # Apply preprocessing (returns ModelReadyLoaders)
+        train_loader, _, val_loader, _, test_loader = preprocess(X_tr, y_tr, X_va, y_va, X_test)
+        
+        # Train high-capacity ensemble (ConvNeXt, Swin, ViT) using DDP
+        # engine returns (fold_val_preds, fold_test_preds)
+        engine = PREDICTION_ENGINES["vision_ensemble_ddp"]
+        fold_val_preds, fold_test_preds = engine(
+            train_loader, y_tr, val_loader, y_va, test_loader
         )
+        
+        # Store fold results
+        oof_preds[val_idx] = fold_val_preds
+        test_preds_list.append(fold_test_preds)
+        
+        # Memory Management: Clear VRAM cache between folds
+        torch.cuda.empty_cache()
+        print(f"--- Fold {fold + 1} Complete ---")
 
-        # Train and predict with each registered model engine
-        for model_name, train_func in PREDICTION_ENGINES.items():
-            val_preds, test_preds = train_func(X_tr, y_tr, X_v, y_v, X_te)
+    # 5. Consolidate and Ensemble
+    # Average test predictions across folds to create the base test prediction
+    mean_test_preds = np.mean(test_preds_list, axis=0)
 
-            # Store OOF predictions in the correct indices
-            all_oof_preds[model_name][val_idx] = val_preds.values
-            # Store test predictions for later ensembling
-            all_test_preds[model_name].append(test_preds)
+    # Use ensemble function for Temperature Scaling calibration and weighted optimization
+    # Even with one consolidated CV model, this step ensures optimal calibration
+    final_test_preds = ensemble(
+        all_val_preds={"cv_ensemble": oof_preds},
+        all_test_preds={"cv_ensemble": mean_test_preds},
+        y_val=y_train_full
+    )
 
-    # Step 5: Ensemble predictions from all folds and models
-    # Note: ensemble() calculates the mean of folds then the mean of models.
-    final_test_preds = ensemble(all_oof_preds, all_test_preds, y)
-
-    # Step 6: Calculate CV scores (Log Loss) for documentation
-    model_scores = {}
-    for model_name, oof_p in all_oof_preds.items():
-        # Ensure oof_p is treated as probabilities for Log Loss calculation
-        score = log_loss(y, oof_p)
-        model_scores[model_name] = float(score)
-
-    # Step 7: Final Submission Generation
-    # test_ids and X_test are aligned from load_data
+    # 6. Generate Deliverables
+    # Ensure output directory exists
+    os.makedirs(OUTPUT_DATA_PATH, exist_ok=True)
+    
+    # Save submission CSV
     submission_df = pd.DataFrame({
-        'id': test_ids,
-        'label': final_test_preds
+        "id": test_ids,
+        "label": final_test_preds
     })
+    submission_path = os.path.join(OUTPUT_DATA_PATH, "submission.csv")
+    submission_df.to_csv(submission_path, index=False)
+    print(f"Workflow: Submission file saved to {submission_path}")
 
-    submission_file_path = os.path.join(OUTPUT_DATA_PATH, "submission.csv")
-    submission_df.to_csv(submission_file_path, index=False)
-
-    # Return JSON-serializable execution summary
-    return {
-        "submission_file_path": submission_file_path,
-        "model_scores": model_scores,
-        "status": "success"
+    # Compute prediction statistics for the return payload
+    # Convert numpy types to native Python floats for JSON serialization
+    prediction_stats = {
+        "oof": {
+            "mean": float(np.mean(oof_preds)),
+            "std": float(np.std(oof_preds)),
+            "min": float(np.min(oof_preds)),
+            "max": float(np.max(oof_preds)),
+        },
+        "test": {
+            "mean": float(np.mean(final_test_preds)),
+            "std": float(np.std(final_test_preds)),
+            "min": float(np.min(final_test_preds)),
+            "max": float(np.max(final_test_preds)),
+        }
     }
+
+    output_info = {
+        "submission_file_path": submission_path,
+        "prediction_stats": prediction_stats,
+    }
+
+    print("Workflow complete. Returning results.")
+    return output_info

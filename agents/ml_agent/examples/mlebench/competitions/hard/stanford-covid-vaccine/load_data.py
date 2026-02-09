@@ -1,82 +1,94 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
+import pandas as pd
 import os
 from typing import Tuple
 
-import pandas as pd
+# Task-adaptive type definitions
+X = pd.DataFrame      # Feature matrix: RNA molecules with sequence/structure attributes
+y = pd.DataFrame      # Target vector: Nested lists of degradation/reactivity values
+Ids = pd.Series       # Identifier: Sample IDs for alignment
 
-BASE_DATA_PATH = "/root/workspace/evolux_ml/output/mlebench/stanford-covid-vaccine/prepared/public"
-OUTPUT_DATA_PATH = "output/832d0196-b83e-4fa9-8ea2-3588ff903a43/1/executor/output"
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-11/evolux/output/mlebench/stanford-covid-vaccine/prepared/public"
+OUTPUT_DATA_PATH = "output/cd1762a7-cbef-43b4-bbfc-bc919a0a7546/1/executor/output"
 
-# For type hinting, DT is assumed to be pandas DataFrame or Series
-DT = pd.DataFrame | pd.Series
-
-
-def load_data(validation_mode: bool = False) -> Tuple[DT, DT, DT, DT]:
+def load_data(validation_mode: bool = False) -> Tuple[X, y, X, Ids]:
     """
-    Loads, splits, and returns the initial datasets for the RNA degradation prediction task.
+    Loads and prepares the mRNA degradation datasets.
     
-    Args:
-        validation_mode: Controls the data loading behavior.
-            - False (default): Load the complete dataset.
-            - True: Load a small subset (≤100 rows) for quick validation.
-
-    Returns:
-        Tuple[DT, DT, DT, DT]: 
-        - X (pd.DataFrame): Training features including sequences and metadata.
-        - y (pd.DataFrame): Training targets (reactivity and degradation rates).
-        - X_test (pd.DataFrame): Test features with identical structure to X.
-        - test_ids (pd.Series): Identifiers for the test data samples.
+    The function loads RNA sequences, their estimated secondary structures, and 
+    associated experimental degradation rates (targets) from JSON files.
     """
-    train_path = os.path.join(BASE_DATA_PATH, 'train.json')
-    test_path = os.path.join(BASE_DATA_PATH, 'test.json')
+    
+    # Define paths
+    train_path = os.path.join(BASE_DATA_PATH, "train.json")
+    test_path = os.path.join(BASE_DATA_PATH, "test.json")
+    
+    # Step 0: Ensure data readiness
+    # Check for existence of essential files
+    for path in [train_path, test_path]:
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Required data file not found at: {path}")
 
-    # Load JSON data (lines=True as specified in dataset description)
-    # Using pandas as it robustly handles nested lists in JSON-lines format
-    train_df = pd.read_json(train_path, lines=True)
-    test_df = pd.read_json(test_path, lines=True)
-
-    # Validation mode subsetting
-    if validation_mode:
-        train_df = train_df.head(100)
-        test_df = test_df.head(100)
-
-    # 5 target columns to be predicted
-    target_cols = ['reactivity', 'deg_Mg_pH10', 'deg_pH10', 'deg_Mg_50C', 'deg_50C']
-
-    # Feature columns to retain for modeling and weighting
-    # We include seq_length/seq_scored to handle the variable lengths in the test set
+    print(f"Loading raw data from {BASE_DATA_PATH}...")
+    
+    # Step 1: Load data from sources
+    # Using pandas read_json with lines=True as the files are JSONL format
+    df_train_raw = pd.read_json(train_path, lines=True)
+    df_test_raw = pd.read_json(test_path, lines=True)
+    
+    # Step 2: Structure data into required return format
+    
+    # Filter training data based on SN_filter as per technical specification
+    # SN_filter indicates if the sample passed quality filters (signal-to-noise, etc.)
+    print(f"Initial training samples: {len(df_train_raw)}")
+    df_train = df_train_raw[df_train_raw['SN_filter'] == 1].reset_index(drop=True)
+    print(f"Training samples after SN_filter == 1: {len(df_train)}")
+    
+    # Define feature and target columns
+    # Features common to both train and test
     feature_cols = [
-        'id', 'sequence', 'structure', 'predicted_loop_type',
-        'seq_length', 'seq_scored', 'signal_to_noise', 'SN_filter'
+        'id', 
+        'sequence', 
+        'structure', 
+        'predicted_loop_type', 
+        'seq_length', 
+        'seq_scored'
     ]
-
-    # Extract targets
-    y = train_df[target_cols].copy()
-
-    # Extract training features
-    X = train_df[feature_cols].copy()
-
-    # Prepare test features with identical structure
-    # test.json typically lacks signal_to_noise and SN_filter; we fill them with defaults
-    X_test = test_df.reindex(columns=feature_cols)
-    X_test['signal_to_noise'] = X_test['signal_to_noise'].fillna(0.0)
-    X_test['SN_filter'] = X_test['SN_filter'].fillna(0)
-
-    # Extract test identifiers
-    test_ids = test_df['id'].copy()
-
-    # Final validation of requirements
-    if X.empty or y.empty or X_test.empty or test_ids.empty:
-        raise ValueError("One or more returned datasets are empty.")
-
-    if len(X) != len(y):
-        raise ValueError(f"Mismatch in training samples: X({len(X)}) vs y({len(y)})")
-
+    
+    # Ground truth targets (lists of floats for the first seq_scored bases)
+    target_cols = [
+        'reactivity', 
+        'deg_Mg_pH10', 
+        'deg_pH10', 
+        'deg_Mg_50C', 
+        'deg_50C'
+    ]
+    
+    # Step 3: Apply validation_mode subsetting if enabled
+    if validation_mode:
+        print("Validation mode: Subsetting data to at most 200 rows.")
+        df_train = df_train.head(200)
+        df_test_raw = df_test_raw.head(200)
+        
+    # Extract feature matrices and labels
+    # We use .copy() to ensure we return independent objects and avoid SettingWithCopy warnings downstream
+    X_train = df_train[feature_cols].copy()
+    y_train = df_train[target_cols].copy()
+    X_test = df_test_raw[feature_cols].copy()
+    test_ids = df_test_raw['id'].copy()
+    
+    # Verify non-empty and alignment
+    if X_train.empty or y_train.empty or X_test.empty or test_ids.empty:
+        raise ValueError("Data loading resulted in empty datasets. Check source files or filtering logic.")
+        
+    if len(X_train) != len(y_train):
+        raise ValueError(f"Train features and targets mismatch: {len(X_train)} vs {len(y_train)}")
+        
     if len(X_test) != len(test_ids):
-        raise ValueError(f"Mismatch in test samples: X_test({len(X_test)}) vs test_ids({len(test_ids)})")
+        raise ValueError(f"Test features and IDs mismatch: {len(X_test)} vs {len(test_ids)}")
 
-    return X, y, X_test, test_ids
+    print(f"Successfully loaded {len(X_train)} training samples and {len(X_test)} test samples.")
+    print(f"Features: {X_train.columns.tolist()}")
+    print(f"Targets: {y_train.columns.tolist()}")
+
+    # Step 4: Return X_train, y_train, X_test, test_ids
+    return X_train, y_train, X_test, test_ids

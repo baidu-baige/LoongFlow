@@ -1,117 +1,100 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-import io
+import pandas as pd
 import os
 import zipfile
 from typing import Tuple
 
-import numpy as np
-import pandas as pd
-from PIL import Image
+# Task-adaptive type definitions
+X = pd.Series  # Feature matrix: Series of absolute image paths
+y = pd.Series  # Target vector: Series of binary labels (int)
+Ids = pd.Series  # Identifier type: Series of image filenames (strings)
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/aerial-cactus-identification/prepared/public"
-OUTPUT_DATA_PATH = "output/153e4624-940b-4d19-a37d-90435531bfd1/1/executor/output"
-
-# For type hinting, DT is assumed to be pandas DataFrame or Series
-DT = pd.DataFrame | pd.Series
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-03/evolux/output/mlebench/aerial-cactus-identification/prepared/public"
+OUTPUT_DATA_PATH = "output/eac64466-fa75-4fb8-ade1-75e2091ddf4a/1/executor/output"
 
 
-def load_data() -> Tuple[DT, DT, DT, DT]:
+def load_data(validation_mode: bool = False) -> Tuple[X, y, X, Ids]:
     """
-    Loads, splits, and returns the initial datasets.
+    Loads and prepares the Aerial Cactus Identification dataset.
 
-    This function takes no arguments as it should derive file paths from the task description
-    or predefined global variables.
+    Args:
+        validation_mode: If True, returns at most 200 representative samples.
 
     Returns:
-        Tuple[DT, DT, DT, DT]: A tuple containing four elements:
-        - X (DT): Training data features.
-        - y (DT): Training data labels.
-        - X_test (DT): Test data features.
-        - test_ids (DT): Identifiers for the test data.
+        X_train: pd.Series of absolute file paths for training images.
+        y_train: pd.Series of labels (0 or 1).
+        X_test: pd.Series of absolute file paths for test images.
+        test_ids: pd.Series of IDs for submission file creation.
     """
-    # Define file paths
+    # Step 0: Ensure data readiness (Extraction)
+    # We use a named subdirectory to store the extracted images.
+    # Note: Preparation is always full, independent of validation_mode.
+    extract_base = os.path.join(BASE_DATA_PATH, "extracted_images")
+
+    for zip_name in ["train.zip", "test.zip"]:
+        zip_path = os.path.join(BASE_DATA_PATH, zip_name)
+        folder_name = zip_name.replace(".zip", "")
+        target_dir = os.path.join(extract_base, folder_name)
+
+        # Verify if extraction is needed (check if folder exists and is non-empty)
+        if not os.path.exists(target_dir) or not os.listdir(target_dir):
+            print(f"Preparing data: Extracting {zip_path} to {extract_base}...")
+            os.makedirs(extract_base, exist_ok=True)
+
+            if not os.path.exists(zip_path):
+                raise FileNotFoundError(f"Missing required archive: {zip_path}")
+
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_base)
+
+            # Post-extraction verification
+            print(f"Finished extracting {zip_name}.")
+
+    # Step 1: Load metadata
     train_csv_path = os.path.join(BASE_DATA_PATH, "train.csv")
-    train_zip_path = os.path.join(BASE_DATA_PATH, "train.zip")
-    test_zip_path = os.path.join(BASE_DATA_PATH, "test.zip")
+    test_csv_path = os.path.join(BASE_DATA_PATH, "sample_submission.csv")
 
-    # Load training labels
+    if not os.path.exists(train_csv_path) or not os.path.exists(test_csv_path):
+        raise FileNotFoundError("Required CSV metadata files are missing.")
+
     train_df = pd.read_csv(train_csv_path)
+    test_df = pd.read_csv(test_csv_path)
 
-    # Create a dictionary mapping image id to label
-    label_dict = dict(zip(train_df['id'], train_df['has_cactus']))
+    # Step 2: Apply validation_mode subsetting
+    if validation_mode:
+        print("Validation mode: Sampling 200 representative rows from train and test.")
+        # Sample with fixed random state for reproducibility
+        train_df = train_df.sample(n=min(200, len(train_df)), random_state=42)
+        test_df = test_df.sample(n=min(200, len(test_df)), random_state=42)
 
-    # Load training images from zip
-    train_images = []
-    train_labels = []
-    train_ids = []
+    # Step 3: Resolve absolute paths and structure returns
+    def resolve_absolute_path(img_id, subset):
+        """
+        Resolves the absolute path of an image, handling different possible zip structures.
+        """
+        # Candidate 1: Standard extraction (extract_base/subset/img_id)
+        path_std = os.path.join(extract_base, subset, img_id)
+        if os.path.exists(path_std):
+            return path_std
 
-    with zipfile.ZipFile(train_zip_path, 'r') as zip_ref:
-        # Get list of image files in the zip
-        image_files = [f for f in zip_ref.namelist() if f.endswith('.jpg')]
+        # Candidate 2: Flat extraction (extract_base/img_id)
+        path_flat = os.path.join(extract_base, img_id)
+        if os.path.exists(path_flat):
+            return path_flat
 
-        for img_file in image_files:
-            # Extract the filename (without directory path if any)
-            img_name = os.path.basename(img_file)
+        # Candidate 3: Doubly nested (extract_base/subset/subset/img_id)
+        path_nested = os.path.join(extract_base, subset, subset, img_id)
+        if os.path.exists(path_nested):
+            return path_nested
 
-            if img_name in label_dict:
-                # Read image from zip
-                with zip_ref.open(img_file) as f:
-                    img_data = f.read()
-                    img = Image.open(io.BytesIO(img_data))
-                    img_array = np.array(img)
+        raise FileNotFoundError(f"Image ID '{img_id}' not found in prepared directory '{extract_base}'.")
 
-                    # Normalize to [0, 1] range
-                    img_array = img_array.astype(np.float32) / 255.0
+    print("Mapping image paths and finalising datasets...")
+    X_train_paths = train_df['id'].apply(lambda x: resolve_absolute_path(x, "train")).reset_index(drop=True)
+    y_train_labels = train_df['has_cactus'].reset_index(drop=True)
 
-                    # Flatten the image for DataFrame storage
-                    # Original shape: (32, 32, 3) -> flattened: (3072,)
-                    img_flat = img_array.flatten()
+    X_test_paths = test_df['id'].apply(lambda x: resolve_absolute_path(x, "test")).reset_index(drop=True)
+    test_ids_out = test_df['id'].reset_index(drop=True)
 
-                    train_images.append(img_flat)
-                    train_labels.append(label_dict[img_name])
-                    train_ids.append(img_name)
+    print(f"Data loading complete. Train size: {len(X_train_paths)}, Test size: {len(X_test_paths)}")
 
-    # Load test images from zip
-    test_images = []
-    test_ids_list = []
-
-    with zipfile.ZipFile(test_zip_path, 'r') as zip_ref:
-        # Get list of image files in the zip
-        image_files = [f for f in zip_ref.namelist() if f.endswith('.jpg')]
-
-        for img_file in image_files:
-            # Extract the filename (without directory path if any)
-            img_name = os.path.basename(img_file)
-
-            if img_name:  # Skip empty names (directories)
-                # Read image from zip
-                with zip_ref.open(img_file) as f:
-                    img_data = f.read()
-                    img = Image.open(io.BytesIO(img_data))
-                    img_array = np.array(img)
-
-                    # Normalize to [0, 1] range
-                    img_array = img_array.astype(np.float32) / 255.0
-
-                    # Flatten the image for DataFrame storage
-                    img_flat = img_array.flatten()
-
-                    test_images.append(img_flat)
-                    test_ids_list.append(img_name)
-
-    # Create column names for the flattened image data
-    # 32x32x3 = 3072 features
-    num_features = 32 * 32 * 3
-    column_names = [f'pixel_{i}' for i in range(num_features)]
-
-    # Create DataFrames
-    X = pd.DataFrame(train_images, columns=column_names)
-    y = pd.Series(train_labels, name='has_cactus')
-    X_test = pd.DataFrame(test_images, columns=column_names)
-    test_ids = pd.Series(test_ids_list, name='id')
-
-    return X, y, X_test, test_ids
+    return X_train_paths, y_train_labels, X_test_paths, test_ids_out

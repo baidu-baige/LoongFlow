@@ -1,79 +1,96 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
 import os
-
-import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_error
+import numpy as np
+from typing import Dict
 
-from create_features import create_features
-from cross_validation import cross_validation
-from ensemble import ensemble
-# Assume all component functions are available for import
+# Import all component functions
 from load_data import load_data
+from preprocess import preprocess
+from get_splitter import get_splitter
 from train_and_predict import PREDICTION_ENGINES
+from ensemble import ensemble
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/predict-volcanic-eruptions-ingv-oe/prepared/public"
-OUTPUT_DATA_PATH = "output/43637237-1f49-4750-a868-8602ac177881/1/executor/output"
-
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-09/evolux/output/mlebench/predict-volcanic-eruptions-ingv-oe/prepared/public"
+OUTPUT_DATA_PATH = "output/bdc750a4-f0a3-4926-871d-f9675d7cf1ef/1/executor/output"
 
 def workflow() -> dict:
     """
     Orchestrates the complete end-to-end machine learning pipeline in production mode.
     """
+    print("Workflow: Starting production pipeline...")
+    
+    # Ensure output directory exists
+    os.makedirs(OUTPUT_DATA_PATH, exist_ok=True)
+
     # 1. Load full dataset
-    X, y, X_test_meta, test_ids = load_data(validation_mode=False)
+    # Returns: X_train (dict), y_train (Series), X_test (dict), test_ids (ndarray)
+    X_train_raw, y_train, X_test_raw, test_ids = load_data(validation_mode=False)
 
-    # 2. Set up cross-validation strategy
-    splitter = cross_validation(X, y)
+    # 2. Set up data splitting strategy
+    splitter = get_splitter(X_train_raw, y_train)
+    n_splits = splitter.get_n_splits()
 
-    # Initialize containers for out-of-fold and test predictions
-    model_names = list(PREDICTION_ENGINES.keys())
-    all_oof_preds = {name: np.zeros(len(y)) for name in model_names}
-    all_test_preds = {name: [] for name in model_names}
+    # Containers for out-of-fold and test predictions for each engine
+    model_oof_preds = {}
+    model_test_preds = {}
 
-    # 3. Training Loop across Folds
-    for fold, (train_idx, val_idx) in enumerate(splitter.split(X, y)):
-        # Split metadata
-        X_train_meta, X_val_meta = X.iloc[train_idx], X.iloc[val_idx]
-        y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
+    # Initialize prediction containers for each registered engine
+    for engine_name in PREDICTION_ENGINES.keys():
+        model_oof_preds[engine_name] = np.zeros(len(y_train))
+        model_test_preds[engine_name] = np.zeros(len(test_ids))
 
-        # a. Feature Engineering for this fold (uses internal joblib parallelization)
-        X_tr, y_tr, X_v, y_v, X_te = create_features(
-            X_train_meta, y_train, X_val_meta, y_val, X_test_meta
+    # 3. Cross-Validation Loop
+    print(f"Workflow: Starting {n_splits}-fold cross-validation...")
+    for fold_idx, (train_idx, val_idx) in enumerate(splitter.split(X_train_raw, y_train)):
+        print(f"--- Processing Fold {fold_idx + 1}/{n_splits} ---")
+        
+        # Subset training and validation data for this fold
+        # Convert indices to segment_ids for signal dictionary lookup
+        train_ids_fold = y_train.index[train_idx]
+        val_ids_fold = y_train.index[val_idx]
+        
+        X_tr_fold = {sid: X_train_raw[sid] for sid in train_ids_fold}
+        y_tr_fold = y_train.iloc[train_idx]
+        X_val_fold = {sid: X_train_raw[sid] for sid in val_ids_fold}
+        y_val_fold = y_train.iloc[val_idx]
+
+        # b. Preprocess: Feature extraction and scaling
+        # Note: preprocess handles parallel extraction and fit/transform logic
+        X_tr_proc, y_tr_proc, X_val_proc, y_val_proc, X_te_proc = preprocess(
+            X_tr_fold, y_tr_fold, X_val_fold, y_val_fold, X_test_raw
         )
 
-        # b. Train each model engine
-        for name, engine_func in PREDICTION_ENGINES.items():
-            val_preds, test_preds = engine_func(X_tr, y_tr, X_v, y_v, X_te)
+        # c. Train each model in PREDICTION_ENGINES
+        for engine_name, engine_fn in PREDICTION_ENGINES.items():
+            print(f"Workflow: Training engine '{engine_name}' on Fold {fold_idx + 1}...")
+            # Each engine optimizes MAE and uses GPUs
+            val_preds, test_preds = engine_fn(
+                X_tr_proc, y_tr_proc, X_val_proc, y_val_proc, X_te_proc
+            )
+            
+            # Record OOF predictions and accumulate test predictions (for averaging)
+            model_oof_preds[engine_name][val_idx] = val_preds
+            model_test_preds[engine_name] += test_preds / n_splits
 
-            # Record OOF predictions and test predictions for the fold
-            all_oof_preds[name][val_idx] = val_preds
-            all_test_preds[name].append(test_preds)
+    # 4. Ensemble stage: Consolidate model predictions
+    # This applies blending weights (default 1/N) to the averaged test predictions
+    final_test_preds = ensemble(model_oof_preds, model_test_preds, y_train)
 
-    # 4. Compute Model Scores (MAE)
-    model_scores = {}
-    for name in model_names:
-        score = mean_absolute_error(y, all_oof_preds[name])
-        model_scores[name] = float(score)
+    # Calculate final OOF predictions using the same blending logic (equal weights if 1 engine)
+    # We use equal weighting as per technical spec logic to generate OOF stats
+    model_names = list(PREDICTION_ENGINES.keys())
+    weights = np.ones(len(model_names)) / len(model_names)
+    final_oof_preds = np.zeros(len(y_train))
+    for i, name in enumerate(model_names):
+        final_oof_preds += weights[i] * model_oof_preds[name]
 
-    # 5. Ensemble predictions from all models/folds
-    # This averages all fold predictions for each model and then across models
-    final_test_preds = ensemble(all_oof_preds, all_test_preds, y)
-
-    # Calculate an aggregate OOF for statistics (averaging across models if multiple exist)
-    ensemble_oof = np.mean([all_oof_preds[name] for name in model_names], axis=0)
-
-    # 6. Compute prediction statistics
+    # 5. Compute prediction statistics
     prediction_stats = {
         "oof": {
-            "mean": float(np.mean(ensemble_oof)),
-            "std": float(np.std(ensemble_oof)),
-            "min": float(np.min(ensemble_oof)),
-            "max": float(np.max(ensemble_oof)),
+            "mean": float(np.mean(final_oof_preds)),
+            "std": float(np.std(final_oof_preds)),
+            "min": float(np.min(final_oof_preds)),
+            "max": float(np.max(final_oof_preds)),
         },
         "test": {
             "mean": float(np.mean(final_test_preds)),
@@ -83,28 +100,25 @@ def workflow() -> dict:
         }
     }
 
-    # 7. Generate deliverables
-    # Create submission dataframe
+    # 6. Generate deliverables
     submission_df = pd.DataFrame({
         'segment_id': test_ids,
         'time_to_eruption': final_test_preds
     })
+    
+    submission_path = os.path.join(OUTPUT_DATA_PATH, "submission.csv")
+    submission_df.to_csv(submission_path, index=False)
+    print(f"Workflow: Submission saved to {submission_path}")
 
-    # Ensure output directory exists
-    os.makedirs(OUTPUT_DATA_PATH, exist_ok=True)
-    submission_file_path = os.path.join(OUTPUT_DATA_PATH, "submission.csv")
-    submission_df.to_csv(submission_file_path, index=False)
+    # Log overall CV performance
+    overall_mae = np.mean(np.abs(final_oof_preds - y_train.values))
+    print(f"Workflow: Final CV MAE: {overall_mae:.2f}")
 
-    # Save OOF predictions for transparency/reproducibility
-    oof_file_path = os.path.join(OUTPUT_DATA_PATH, "oof_predictions.npy")
-    np.save(oof_file_path, ensemble_oof)
-
-    # Return task artifacts
     output_info = {
-        "submission_file_path": submission_file_path,
-        "model_scores": model_scores,
+        "submission_file_path": submission_path,
         "prediction_stats": prediction_stats,
-        "oof_file_path": oof_file_path
+        "overall_cv_mae": float(overall_mae)
     }
-
+    
+    print("Workflow: Pipeline execution completed successfully.")
     return output_info

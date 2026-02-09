@@ -1,95 +1,128 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-from typing import Any, Callable, Dict, Tuple
-
-import lightgbm as lgb
 import numpy as np
+import pandas as pd
+import lightgbm as lgb
+import xgboost as xgb
+import concurrent.futures
+from typing import Tuple, Dict, Callable, Any
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/predict-volcanic-eruptions-ingv-oe/prepared/public"
-OUTPUT_DATA_PATH = "output/43637237-1f49-4750-a868-8602ac177881/1/executor/output"
+# Task-adaptive type definitions
+X = pd.DataFrame           # Preprocessed tabular feature matrix
+y = pd.Series              # Target series (time_to_eruption)
+Predictions = np.ndarray   # Array of predicted values
 
-# Type Definitions
-Features = Any  # pd.DataFrame
-Labels = Any  # pd.Series
-Predictions = Any  # np.ndarray
-
-PredictionFunction = Callable[
-    [Features, Labels, Features, Labels, Features],
+# Model Function Type
+ModelFn = Callable[
+    [X, y, X, y, X],
     Tuple[Predictions, Predictions]
 ]
 
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-09/evolux/output/mlebench/predict-volcanic-eruptions-ingv-oe/prepared/public"
+OUTPUT_DATA_PATH = "output/bdc750a4-f0a3-4926-871d-f9675d7cf1ef/1/executor/output"
 
 # ===== Training Functions =====
 
-def train_lightgbm(
-    X_train: Features,
-    y_train: Labels,
-    X_val: Features,
-    y_val: Labels,
-    X_test: Features
+def train_lgbm_xgb_ensemble(
+    X_train: X,
+    y_train: y,
+    X_val: X,
+    y_val: y,
+    X_test: X
 ) -> Tuple[Predictions, Predictions]:
     """
-    Trains a LightGBM model with MAE optimization and GPU acceleration.
-
-    Args:
-        X_train (Features): Feature-engineered training set.
-        y_train (Labels): Training labels.
-        X_val (Features): Feature-engineered validation set.
-        y_val (Labels): Validation labels.
-        X_test (Features): Feature-engineered test set.
-
-    Returns:
-        Tuple[Predictions, Predictions]: (validation_predictions, test_predictions)
+    Trains an ensemble of high-capacity gradient boosting models (LightGBM and XGBoost) 
+    using all available GPUs in parallel.
+    
+    LightGBM is assigned to GPU 0 and XGBoost to GPU 1. 
+    Both models optimize for Mean Absolute Error (MAE) as required by the task.
     """
+    print(f"Starting Training: LGBM and XGBoost Ensemble (Parallel on 2 GPUs)...")
 
-    # Step 1 & 2: Build and configure model with GPU acceleration
-    # Using device='cuda' as per Guideline 0
-    model = lgb.LGBMRegressor(
-        n_estimators=10000,
-        learning_rate=0.05,
-        num_leaves=31,
-        feature_fraction=0.8,
-        bagging_fraction=0.8,
-        bagging_freq=5,
-        max_depth=-1,
-        random_state=42,
-        objective='mae',
-        metric='mae',
-        device='cuda',
-        n_jobs=-1,
-        verbose=-1
-    )
+    def _train_lgbm() -> Tuple[Predictions, Predictions]:
+        """Trains LightGBM using GPU 0."""
+        # Parameters mapped from specification and optimized for GPU usage
+        lgb_params = {
+            'objective': 'regression_l1',
+            'metric': 'mae',
+            'learning_rate': 0.05,
+            'num_leaves': 31,
+            'feature_fraction': 0.8,
+            'bagging_fraction': 0.8,
+            'bagging_freq': 5,
+            'device': 'cuda',
+            'gpu_device_id': 0,
+            'random_state': 42,
+            'n_jobs': 18,
+            'verbose': -1
+        }
+        
+        # early_stopping_rounds=100 via callback to avoid API deprecation issues
+        model = lgb.LGBMRegressor(n_estimators=10000, **lgb_params)
+        model.fit(
+            X_train, y_train,
+            eval_set=[(X_val, y_val)],
+            callbacks=[
+                lgb.early_stopping(stopping_rounds=100),
+                lgb.log_evaluation(period=200)
+            ]
+        )
+        val_preds = model.predict(X_val)
+        test_preds = model.predict(X_test)
+        return val_preds, test_preds
 
-    # Step 3: Train on (X_train, y_train) with early stopping on (X_val, y_val)
-    # Using current LightGBM callback API for early stopping
-    model.fit(
-        X_train,
-        y_train,
-        eval_set=[(X_val, y_val)],
-        callbacks=[
-            lgb.early_stopping(stopping_rounds=100, verbose=True),
-            lgb.log_evaluation(period=100)
-        ]
-    )
+    def _train_xgb() -> Tuple[Predictions, Predictions]:
+        """Trains XGBoost using GPU 1."""
+        # Parameters mapped from specification. 
+        # early_stopping_rounds moved to constructor to avoid TypeError in fit().
+        # tree_method='gpu_hist' and gpu_id=1 for device targeting.
+        xgb_params = {
+            'objective': 'reg:absoluteerror',
+            'tree_method': 'gpu_hist',
+            'gpu_id': 1,
+            'learning_rate': 0.05,
+            'max_depth': 6,
+            'subsample': 0.8,
+            'colsample_bytree': 0.8,
+            'early_stopping_rounds': 100,
+            'random_state': 42,
+            'n_jobs': 18
+        }
+        
+        model = xgb.XGBRegressor(n_estimators=10000, **xgb_params)
+        model.fit(
+            X_train, y_train,
+            eval_set=[(X_val, y_val)],
+            verbose=200
+        )
+        val_preds = model.predict(X_val)
+        test_preds = model.predict(X_test)
+        return val_preds, test_preds
 
-    # Step 4: Predict on X_val and X_test
-    validation_predictions = model.predict(X_val)
-    test_predictions = model.predict(X_test)
+    # Execute training of both models concurrently to utilize both H20 GPUs simultaneously
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        future_lgbm = executor.submit(_train_lgbm)
+        future_xgb = executor.submit(_train_xgb)
+        
+        # Propagate exceptions immediately if any model fails
+        val_preds_lgb, test_preds_lgb = future_lgbm.result()
+        val_preds_xgb, test_preds_xgb = future_xgb.result()
 
-    # Validation: Ensure output is finite and contains no NaNs/Infs
-    if not np.isfinite(validation_predictions).all() or not np.isfinite(test_predictions).all():
-        # Handle non-finite values if they emerge, though LGBM is usually robust
-        validation_predictions = np.nan_to_num(validation_predictions, nan=0.0, posinf=0.0, neginf=0.0)
-        test_predictions = np.nan_to_num(test_predictions, nan=0.0, posinf=0.0, neginf=0.0)
+    # Create ensemble by averaging predictions
+    val_preds = (val_preds_lgb + val_preds_xgb) / 2.0
+    test_preds = (test_preds_lgb + test_preds_xgb) / 2.0
+    
+    # Final validation ensure no NaNs/Infs
+    assert not np.isnan(val_preds).any(), "NaN found in ensemble validation predictions"
+    assert not np.isnan(test_preds).any(), "NaN found in ensemble test predictions"
+    
+    print(f"Ensemble training completed successfully.")
+    print(f"LGBM Val MAE: {np.mean(np.abs(val_preds_lgb - y_val)):.2f}")
+    print(f"XGB Val MAE: {np.mean(np.abs(val_preds_xgb - y_val)):.2f}")
+    print(f"Ensemble Val MAE: {np.mean(np.abs(val_preds - y_val)):.2f}")
 
-    # Step 5: Return (validation_predictions, test_predictions)
-    return validation_predictions, test_predictions
+    return val_preds, test_preds
 
 
 # ===== Model Registry =====
-PREDICTION_ENGINES: Dict[str, PredictionFunction] = {
-    "lightgbm": train_lightgbm,
+PREDICTION_ENGINES: Dict[str, ModelFn] = {
+    "lgbm_xgb_ensemble": train_lgbm_xgb_ensemble,
 }

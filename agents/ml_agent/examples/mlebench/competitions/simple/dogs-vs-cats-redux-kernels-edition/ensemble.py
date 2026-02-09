@@ -1,65 +1,108 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-from typing import Dict, List
-
 import numpy as np
 import pandas as pd
+import optuna
+from typing import Dict, List, Any
+from sklearn.metrics import log_loss
+from scipy.special import expit, logit
+import os
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/dogs-vs-cats-redux-kernels-edition/prepared/public"
-OUTPUT_DATA_PATH = "output/7dbf3696-f36d-4f87-8e59-bb45d92869c5/1/executor/output"
-
-# Type Hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-
+# Task-adaptive type definitions
+y = pd.Series
+Predictions = np.ndarray
 
 def ensemble(
-    all_oof_preds: Dict[str, DT],
-    all_test_preds: Dict[str, List[DT]],
-    y_true_full: DT
-) -> DT:
+    all_val_preds: Dict[str, Predictions],
+    all_test_preds: Dict[str, Predictions],
+    y_val: y,
+) -> Predictions:
     """
-    Ensembles predictions from multiple models using a simple arithmetic mean.
-
-    Args:
-        all_oof_preds: Dictionary of {model_name: oof_predictions}.
-        all_test_preds: Dictionary of {model_name: [pred_fold_1, pred_fold_2, ...]}.
-        y_true_full: The Ground Truth labels.
-
-    Returns:
-        DT: Final aggregated predictions for the Test set.
+    Combines predictions from multiple backbones using Temperature Scaling and 
+    Optuna-optimized Weighted Averaging to minimize Log Loss.
     """
-    # Step 1: Aggregate fold predictions for each model (Collapse List[DT] -> DT)
-    # We calculate the mean of all folds for each model separately, then average the models.
-    # This ensures each model contributes equally to the ensemble regardless of its fold count.
+    print(f"Ensemble: Combining predictions from {list(all_val_preds.keys())}")
 
-    model_averages = []
+    # Ensure reproducibility
+    np.random.seed(42)
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-    for model_name, fold_preds in all_test_preds.items():
-        if not fold_preds:
-            continue
+    model_names = list(all_val_preds.keys())
+    if not model_names:
+        raise ValueError("Ensemble received an empty dictionary of predictions.")
 
-        # Convert each fold's predictions to a flat numpy array
-        # fold_preds is a list of DT (pd.Series or np.ndarray)
-        fold_arrays = [np.asarray(p).flatten() for p in fold_preds]
+    # 1. Post-Hoc Calibration (Temperature Scaling)
+    # Calibrate each model's probability distribution to minimize individual Log Loss
+    calibrated_val_preds = {}
+    calibrated_test_preds = {}
+    best_temperatures = {}
 
-        # Compute the mean across all folds for this model
-        # Resulting shape: (num_test_samples,)
-        model_mean = np.mean(np.stack(fold_arrays), axis=0)
-        model_averages.append(model_mean)
+    for name in model_names:
+        val_p = np.clip(all_val_preds[name], 1e-7, 1 - 1e-7)
+        test_p = np.clip(all_test_preds[name], 1e-7, 1 - 1e-7)
+        
+        # Convert probabilities back to logits for temperature scaling
+        val_logits = logit(val_p)
+        test_logits = logit(test_p)
 
-    if not model_averages:
-        raise ValueError("The provided all_test_preds dictionary is empty or contains no predictions.")
+        def temp_objective(trial):
+            t = trial.suggest_float('t', 0.1, 5.0)
+            scaled_p = expit(val_logits / t)
+            return log_loss(y_val, scaled_p)
 
-    # Step 2: Apply ensemble strategy (Arithmetic Mean across models)
-    # Combine the averaged predictions from different models
-    final_test_preds = np.mean(np.stack(model_averages), axis=0)
+        study = optuna.create_study(direction='minimize')
+        study.optimize(temp_objective, n_trials=50)
+        
+        best_t = study.best_params['t']
+        best_temperatures[name] = best_t
+        
+        calibrated_val_preds[name] = expit(val_logits / best_t)
+        calibrated_test_preds[name] = expit(test_logits / best_t)
+        
+        score = log_loss(y_val, calibrated_val_preds[name])
+        print(f"Model {name} - Best Temperature: {best_t:.4f}, Calibrated LogLoss: {score:.6f}")
 
-    # Step 3: Validate and Return final test predictions
-    # Ensure there are no NaNs or Infs that could lead to invalid submissions
+    # 2. Weighted Average Optimization
+    # Optimize weights to minimize ensemble Log Loss
+    if len(model_names) > 1:
+        def ensemble_objective(trial):
+            weights = [trial.suggest_float(f'w_{name}', 0.0, 1.0) for name in model_names]
+            norm_weights = np.array(weights) / (sum(weights) + 1e-12)
+            
+            ensemble_val = np.zeros_like(calibrated_val_preds[model_names[0]])
+            for i, name in enumerate(model_names):
+                ensemble_val += norm_weights[i] * calibrated_val_preds[name]
+            
+            return log_loss(y_val, ensemble_val)
+
+        ensemble_study = optuna.create_study(direction='minimize')
+        ensemble_study.optimize(ensemble_objective, n_trials=100)
+        
+        best_weights_raw = [ensemble_study.best_params[f'w_{name}'] for name in model_names]
+        best_weights = np.array(best_weights_raw) / sum(best_weights_raw)
+        
+        final_score = ensemble_study.best_value
+        print(f"Optimal Weights: {dict(zip(model_names, best_weights))}")
+        print(f"Ensemble LogLoss: {final_score:.6f}")
+    else:
+        # Single model case
+        best_weights = np.array([1.0])
+        final_score = log_loss(y_val, calibrated_val_preds[model_names[0]])
+        print(f"Single model ensemble LogLoss: {final_score:.6f}")
+
+    # 3. Generate Final Test Predictions
+    final_test_preds = np.zeros_like(calibrated_test_preds[model_names[0]])
+    for i, name in enumerate(model_names):
+        final_test_preds += best_weights[i] * calibrated_test_preds[name]
+
+    # 4. Final Probability Clipping
+    # Prevent infinite Log Loss penalties from overconfident errors
+    final_test_preds = np.clip(final_test_preds, 0.001, 0.999)
+
+    # Sanity Checks
     if np.isnan(final_test_preds).any() or np.isinf(final_test_preds).any():
-        raise ValueError("Ensemble process generated NaN or Infinity values in the final predictions.")
+        raise ValueError("Ensemble generated NaN or Infinity values.")
+    
+    if len(final_test_preds) != len(all_test_preds[model_names[0]]):
+        raise ValueError("Ensemble output length mismatch with input test predictions.")
 
+    print("Ensemble complete. Returning optimized robust predictions.")
     return final_test_preds

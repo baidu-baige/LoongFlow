@@ -1,131 +1,74 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-from typing import Dict, List
-
 import numpy as np
-import pandas as pd
+import torch
+from sklearn.metrics import roc_auc_score
+from typing import Dict, List, Any
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/aerial-cactus-identification/prepared/public"
-OUTPUT_DATA_PATH = "output/153e4624-940b-4d19-a37d-90435531bfd1/1/executor/output"
-
-# Type Hints
-DT = pd.DataFrame | pd.Series | np.ndarray
+# Task-adaptive type definitions
+y = torch.Tensor  # Target vector type as defined in upstream preprocess
+Predictions = np.ndarray  # Model predictions type as defined in upstream train_and_predict
 
 
 def ensemble(
-    all_oof_preds: Dict[str, DT],
-    all_test_preds: Dict[str, List[DT]],
-    y_true_full: DT
-) -> DT:
+    all_val_preds: Dict[str, Predictions],
+    all_test_preds: Dict[str, Predictions],
+    y_val: y,
+) -> Predictions:
     """
-    Ensembles predictions from multiple models.
-    
-    For this first iteration, we focus on establishing a strong single-model baseline.
-    The strategy is:
-    - If using K-fold CV, average the predictions from all folds
-    - For a single model, simply aggregate fold predictions
-    - Store out-of-fold predictions for potential future stacking
-    
+    Combines predictions from multiple models (folds) into a final output using 
+    simple arithmetic averaging as per the technical specification.
+
     Args:
-        all_oof_preds: Dictionary of {model_name: oof_predictions}.
-        all_test_preds: Dictionary of {model_name: [pred_fold_1, pred_fold_2, ...]}.
-        y_true_full: The Ground Truth labels (use for optimization/scoring).
+        all_val_preds (Dict[str, Predictions]): Dictionary mapping model/fold names to 
+                                               their out-of-fold predictions.
+        all_test_preds (Dict[str, Predictions]): Dictionary mapping model/fold names to 
+                                                their test set predictions.
+        y_val (y): Ground truth targets for validation (torch.Tensor).
 
     Returns:
-        DT: Final predictions for the Test set.
+        Predictions: Final test set probabilities (np.ndarray).
     """
-    from sklearn.metrics import roc_auc_score
+    print(f"Ensembling predictions from {len(all_test_preds)} model outputs...")
 
-    # Step 1: Aggregate fold predictions for each model
-    # For each model, average the test predictions across all folds
-    aggregated_test_preds = {}
+    # Step 1: Evaluate individual model scores (Log AUC for each fold/model)
+    # Convert y_val to numpy for metric calculation
+    y_val_np = y_val.cpu().numpy()
 
-    for model_name, fold_preds_list in all_test_preds.items():
-        if len(fold_preds_list) == 0:
-            continue
-
-        # Convert each fold prediction to numpy array
-        fold_arrays = []
-        for fold_pred in fold_preds_list:
-            if isinstance(fold_pred, (pd.DataFrame, pd.Series)):
-                fold_arrays.append(fold_pred.values.flatten())
-            else:
-                fold_arrays.append(np.array(fold_pred).flatten())
-
-        # Stack and average across folds
-        stacked_preds = np.stack(fold_arrays, axis=0)
-        avg_pred = np.mean(stacked_preds, axis=0)
-        aggregated_test_preds[model_name] = avg_pred
-
-    # Step 2: Calculate OOF scores for each model (for logging/future weighting)
-    oof_scores = {}
-    for model_name, oof_pred in all_oof_preds.items():
-        if isinstance(oof_pred, (pd.DataFrame, pd.Series)):
-            oof_array = oof_pred.values.flatten()
-        else:
-            oof_array = np.array(oof_pred).flatten()
-
-        if isinstance(y_true_full, (pd.DataFrame, pd.Series)):
-            y_true_array = y_true_full.values.flatten()
-        else:
-            y_true_array = np.array(y_true_full).flatten()
-
-        # Calculate AUC-ROC score
+    for name, val_p in all_val_preds.items():
         try:
-            score = roc_auc_score(y_true_array, oof_array)
-            oof_scores[model_name] = score
-            print(f"Model '{model_name}' OOF AUC-ROC: {score:.6f}")
+            # Note: This assumes val_p and y_val_np correspond to the same samples.
+            # In a K-Fold context, y_val might only correspond to the last fold's labels 
+            # or the full OOF labels depending on the workflow implementation.
+            if val_p.shape == y_val_np.shape:
+                score = roc_auc_score(y_val_np, val_p)
+                print(f"Model {name} Validation ROC AUC: {score:.5f}")
+            else:
+                print(f"Skipping AUC calculation for {name}: Shape mismatch ({val_p.shape} vs {y_val_np.shape})")
         except Exception as e:
-            print(f"Could not calculate OOF score for '{model_name}': {e}")
-            oof_scores[model_name] = 0.5  # Default score
+            print(f"Could not calculate ROC AUC for {name}: {e}")
 
-    # Step 3: Compute final ensemble
-    # For this first iteration with a single model, we simply use the aggregated predictions
-    # Future iterations can implement weighted averaging based on OOF scores
+    # Step 2: Apply ensemble strategy (Arithmetic Mean)
+    # Ensure there are models to ensemble
+    if not all_test_preds:
+        raise ValueError("No test predictions provided for ensembling.")
 
-    if len(aggregated_test_preds) == 0:
-        raise ValueError("No valid test predictions found to ensemble")
+    # Collect all test prediction arrays
+    test_preds_list = list(all_test_preds.values())
 
-    if len(aggregated_test_preds) == 1:
-        # Single model case - just return its predictions
-        model_name = list(aggregated_test_preds.keys())[0]
-        final_predictions = aggregated_test_preds[model_name]
-        print(f"Single model ensemble using '{model_name}'")
-    else:
-        # Multiple models - use simple averaging for now
-        # Future iterations can use weighted averaging based on OOF scores
-        print(f"Ensembling {len(aggregated_test_preds)} models using simple averaging")
+    # Check consistency of prediction shapes
+    expected_shape = test_preds_list[0].shape
+    for i, p in enumerate(test_preds_list):
+        if p.shape != expected_shape:
+            raise ValueError(f"Shape mismatch in test predictions for model {list(all_test_preds.keys())[i]}. "
+                             f"Expected {expected_shape}, got {p.shape}.")
 
-        # Stack all model predictions
-        all_model_preds = []
-        for model_name, preds in aggregated_test_preds.items():
-            all_model_preds.append(preds)
+    # Compute arithmetic mean across all models (folds)
+    # Using np.stack and np.mean is memory efficient and leverages vectorization
+    final_test_preds = np.mean(np.stack(test_preds_list), axis=0)
 
-        stacked_model_preds = np.stack(all_model_preds, axis=0)
-        final_predictions = np.mean(stacked_model_preds, axis=0)
+    # Step 3: Integrity check
+    if np.isnan(final_test_preds).any() or np.isinf(final_test_preds).any():
+        raise ValueError("Ensemble produced NaN or Infinity values.")
 
-    # Step 4: Post-processing - ensure valid probability range
-    final_predictions = np.clip(final_predictions, 1e-7, 1 - 1e-7)
+    print(f"Ensemble complete. Final test prediction shape: {final_test_preds.shape}")
 
-    # Validate output
-    assert not np.isnan(final_predictions).any(), "Final predictions contain NaN values"
-    assert not np.isinf(final_predictions).any(), "Final predictions contain Inf values"
-
-    # Get expected length from first model's first fold
-    first_model = list(all_test_preds.keys())[0]
-    first_fold_pred = all_test_preds[first_model][0]
-    if isinstance(first_fold_pred, (pd.DataFrame, pd.Series)):
-        expected_length = len(first_fold_pred)
-    else:
-        expected_length = len(first_fold_pred)
-
-    assert len(final_predictions) == expected_length, \
-        f"Output length {len(final_predictions)} does not match expected {expected_length}"
-
-    print(f"Final ensemble predictions shape: {final_predictions.shape}")
-    print(f"Prediction range: [{final_predictions.min():.6f}, {final_predictions.max():.6f}]")
-
-    return final_predictions
+    return final_test_preds

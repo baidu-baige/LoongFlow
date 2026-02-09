@@ -1,293 +1,267 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-import copy
 import os
-from typing import Callable, Dict, Tuple
-
-import albumentations as A
 import cv2
 import numpy as np
-import pandas as pd
-import timm
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-from albumentations.pytorch import ToTensorV2
+import torch.distributed as dist
+import torch.multiprocessing as mp
 from torch.utils.data import DataLoader, Dataset
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.cuda.amp import autocast, GradScaler
+from typing import Tuple, Any, Dict, Callable
+import timm
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/cassava-leaf-disease-classification/prepared/public"
-OUTPUT_DATA_PATH = "output/068f0c14-e630-462e-bc46-9d2d4b1d5fc3/5/executor/output"
+# Task-adaptive type definitions
+X = torch.Tensor  # Preprocessed image tensors (N, 3, 512, 512)
+y = torch.Tensor  # Target labels (N,)
+Predictions = Dict[str, np.ndarray] # Dictionary mapping model name to probability matrix
 
-# Type hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-PredictionFunction = Callable[[DT, DT, DT, DT, DT], Tuple[DT, DT]]
+# Model Function Type
+ModelFn = Callable[
+    [X, y, X, y, X],
+    Tuple[Predictions, Predictions]
+]
 
+# ===== Bi-Tempered Logistic Loss Implementation =====
 
-# ===== Helper Classes and Functions =====
-
-class CassavaDataset(Dataset):
-    """
-    PyTorch Dataset for loading Cassava Leaf images and labels.
-    """
-
-    def __init__(self, X: pd.DataFrame, y: pd.Series = None, data_root: str = None, transforms=None):
-        self.X = X.reset_index(drop=True)
-        self.y = y.reset_index(drop=True) if y is not None else None
-        self.data_root = data_root
-        self.transforms = transforms
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, index: int):
-        img_name = self.X.iloc[index]['image_id']
-        img_path = os.path.join(self.data_root, img_name)
-
-        img = cv2.imread(img_path)
-        if img is None:
-            raise FileNotFoundError(f"Image not found at {img_path}")
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-        if self.transforms:
-            img = self.transforms(image=img)['image']
-
-        if not isinstance(img, torch.Tensor):
-            img = torch.from_numpy(img).permute(2, 0, 1).float()
-
-        if self.y is not None:
-            label = self.y.iloc[index]
-            return img, torch.tensor(label, dtype=torch.long)
-
-        return img
-
-
-# Bi-Tempered Logistic Loss Helpers
 def log_t(u, t):
     if t == 1.0:
-        return u.log()
+        return torch.log(u)
     else:
-        return (u.pow(1.0 - t) - 1.0) / (1.0 - t)
-
+        return (u**(1.0 - t) - 1.0) / (1.0 - t)
 
 def exp_t(u, t):
     if t == 1.0:
-        return u.exp()
+        return torch.exp(u)
     else:
-        return (1.0 + (1.0 - t) * u).relu().pow(1.0 / (1.0 - t))
-
+        return torch.relu(1.0 + (1.0 - t) * u)**(1.0 / (1.0 - t))
 
 def compute_normalization_fixed_point(activations, t, num_iters):
-    mu = torch.max(activations, dim=-1).values.view(-1, 1)
+    mu = torch.max(activations, dim=-1, keepdim=True).values
     normalized_activations_step_0 = activations - mu
     normalized_activations = normalized_activations_step_0
     for _ in range(num_iters):
-        log_t_exp_t = log_t(exp_t(normalized_activations, t).sum(dim=-1, keepdim=True), t)
-        normalized_activations = normalized_activations_step_0 - log_t_exp_t
-    return normalized_activations
+        logt_partition = torch.sum(exp_t(normalized_activations, t), dim=-1, keepdim=True)
+        normalized_activations = normalized_activations_step_0 - log_t(logt_partition, t)
+    return exp_t(normalized_activations, t)
 
-
-def bi_tempered_logistic_loss(activations, labels, t1, t2, label_smoothing=0.0, num_iters=5):
+def bi_tempered_logistic_loss(activations, labels, t1, t2, label_smoothing=0.1, num_iters=5):
+    num_classes = activations.shape[-1]
+    if labels.dim() == 1:
+        labels = F.one_hot(labels, num_classes).float()
+    
     if label_smoothing > 0:
-        num_classes = activations.shape[-1]
-        labels = (1 - label_smoothing) * labels + label_smoothing / num_classes
+        labels = labels * (1.0 - label_smoothing) + label_smoothing / num_classes
 
     probabilities = compute_normalization_fixed_point(activations, t2, num_iters)
-    probabilities = exp_t(probabilities, t2)
+    temp_term = (labels * log_t(labels + 1e-10, t1) - labels * log_t(probabilities + 1e-10, t1))
+    loss = torch.sum(temp_term, dim=-1) - torch.sum((labels**(2.0 - t1) - probabilities**(2.0 - t1)) / (2.0 - t1), dim=-1)
+    return loss.mean()
 
-    loss_values = (-labels * log_t(probabilities, t1) -
-                   (1.0 - labels) * log_t(1.0 - probabilities, t1))
+# ===== Regularization: Mixup & CutMix =====
 
-    return loss_values.sum(dim=-1).mean()
-
-
-# Augmentation Helpers
-def mixup_data(x, y, alpha=0.4, device='cuda'):
-    lam = np.random.beta(alpha, alpha) if alpha > 0 else 1
-    batch_size = x.size()[0]
-    index = torch.randperm(batch_size).to(device)
-    mixed_x = lam * x + (1 - lam) * x[index, :]
-    y_a, y_b = y, y[index]
-    return mixed_x, y_a, y_b, lam
-
+def get_mixup_cutmix_data(x, y, alpha_mixup=0.4, alpha_cutmix=1.0):
+    if np.random.rand() > 0.5:
+        # Mixup
+        lam = np.random.beta(alpha_mixup, alpha_mixup)
+        index = torch.randperm(x.size(0)).cuda()
+        mixed_x = lam * x + (1 - lam) * x[index, :]
+        y_a, y_b = y, y[index]
+        return mixed_x, y_a, y_b, lam
+    else:
+        # CutMix
+        lam = np.random.beta(alpha_cutmix, alpha_cutmix)
+        index = torch.randperm(x.size(0)).cuda()
+        y_a, y_b = y, y[index]
+        bbx1, bby1, bbx2, bby2 = rand_bbox(x.size(), lam)
+        x_cloned = x.clone()
+        x_cloned[:, :, bbx1:bbx2, bby1:bby2] = x[index, :, bbx1:bbx2, bby1:bby2]
+        lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (x.size()[-1] * x.size()[-2]))
+        return x_cloned, y_a, y_b, lam
 
 def rand_bbox(size, lam):
-    W = size[2]
-    H = size[3]
+    W, H = size[2], size[3]
     cut_rat = np.sqrt(1. - lam)
-    cut_w = int(W * cut_rat)
-    cut_h = int(H * cut_rat)
-    cx = np.random.randint(W)
-    cy = np.random.randint(H)
-    bbx1 = np.clip(cx - cut_w // 2, 0, W)
-    bby1 = np.clip(cy - cut_h // 2, 0, H)
-    bbx2 = np.clip(cx + cut_w // 2, 0, W)
-    bby2 = np.clip(cy + cut_h // 2, 0, H)
+    cut_w, cut_h = int(W * cut_rat), int(H * cut_rat)
+    cx, cy = np.random.randint(W), np.random.randint(H)
+    bbx1, bby1 = np.clip(cx - cut_w // 2, 0, W), np.clip(cy - cut_h // 2, 0, H)
+    bbx2, bby2 = np.clip(cx + cut_w // 2, 0, W), np.clip(cy + cut_h // 2, 0, H)
     return bbx1, bby1, bbx2, bby2
 
+# ===== Dataset =====
 
-def tta_inference(model, loader, device):
-    model.eval()
-    all_probs = []
-    with torch.no_grad():
-        for images in loader:
-            if isinstance(images, (list, tuple)):
-                images = images[0]
-            images = images.to(device)
+class CassavaDataset(Dataset):
+    def __init__(self, images, labels=None):
+        self.images = images
+        self.labels = labels
+    def __len__(self):
+        return len(self.images)
+    def __getitem__(self, idx):
+        if self.labels is not None:
+            return self.images[idx], self.labels[idx]
+        return self.images[idx]
 
-            # View 1: Original
-            p1 = F.softmax(model(images), dim=1)
-            # View 2: Horizontal Flip
-            p2 = F.softmax(model(torch.flip(images, dims=[3])), dim=1)
-            # View 3: Vertical Flip
-            p3 = F.softmax(model(torch.flip(images, dims=[2])), dim=1)
-            # View 4: Transpose
-            p4 = F.softmax(model(images.transpose(2, 3)), dim=1)
+# ===== Training & Inference Worker =====
 
-            avg_probs = (p1 + p2 + p3 + p4) / 4.0
-            all_probs.append(avg_probs.cpu().numpy())
-    if len(all_probs) == 0:
-        return np.array([])
-    return np.concatenate(all_probs, axis=0)
+def ddp_worker(rank, world_size, X_train, y_train, X_val, y_val, X_test, return_dict):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12356'
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
 
+    # Specification: ConvNeXt-Base and Swin-Base at 384 resolution
+    models_config = [
+        ("convnext", "convnext_base.fb_in22k_ft_in1k", 16, 4e-5),
+        ("swin", "swin_base_patch4_window12_384.ms_in22k_ft_in1k", 8, 2e-5)
+    ]
+    
+    IMG_SIZE = 384
+    EPOCHS = 10
 
-# ===== Training Functions =====
+    for model_key, model_name, bs, lr in models_config:
+        if rank == 0:
+            print(f"Rank 0: Starting training {model_name} for {EPOCHS} epochs...")
+            
+        model = timm.create_model(model_name, pretrained=True, num_classes=5).cuda()
+        model = DDP(model, device_ids=[rank])
+        
+        train_ds = CassavaDataset(X_train, y_train)
+        val_ds = CassavaDataset(X_val, y_val)
+        test_ds = CassavaDataset(X_test)
+        
+        train_sampler = DistributedSampler(train_ds, num_replicas=world_size, rank=rank, shuffle=True)
+        val_sampler = DistributedSampler(val_ds, num_replicas=world_size, rank=rank, shuffle=False)
+        test_sampler = DistributedSampler(test_ds, num_replicas=world_size, rank=rank, shuffle=False)
+        
+        train_loader = DataLoader(train_ds, batch_size=bs, sampler=train_sampler, num_workers=8, pin_memory=True)
+        val_loader = DataLoader(val_ds, batch_size=bs*2, sampler=val_sampler, num_workers=8, pin_memory=True)
+        test_loader = DataLoader(test_ds, batch_size=bs*2, sampler=test_sampler, num_workers=8, pin_memory=True)
+        
+        optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
+        scaler = GradScaler()
+        
+        for epoch in range(EPOCHS):
+            model.train()
+            train_sampler.set_epoch(epoch)
+            for imgs, labels in train_loader:
+                imgs, labels = imgs.cuda(), labels.cuda()
+                imgs_mixed, y_a, y_b, lam = get_mixup_cutmix_data(imgs, labels)
+                
+                # Resize from 512 to 384
+                imgs_mixed = F.interpolate(imgs_mixed, size=(IMG_SIZE, IMG_SIZE), mode='bilinear', align_corners=False)
+                
+                optimizer.zero_grad()
+                with autocast():
+                    outputs = model(imgs_mixed)
+                    loss = lam * bi_tempered_logistic_loss(outputs, y_a, 0.8, 1.2) + \
+                           (1 - lam) * bi_tempered_logistic_loss(outputs, y_b, 0.8, 1.2)
+                
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            scheduler.step()
 
-def train_efficientnet_b4_ns_heavy(
-    X_train: DT,
-    y_train: DT,
-    X_val: DT,
-    y_val: DT,
-    X_test: DT
-) -> Tuple[DT, DT]:
+        # Inference with 4-way TTA
+        def predict_tta(loader, dataset_len):
+            model.eval()
+            local_preds = []
+            with torch.no_grad():
+                for batch in loader:
+                    imgs = batch[0] if isinstance(batch, (list, tuple)) else batch
+                    imgs = imgs.cuda()
+                    imgs = F.interpolate(imgs, size=(IMG_SIZE, IMG_SIZE), mode='bilinear', align_corners=False)
+                    with autocast():
+                        # Standard
+                        p1 = model(imgs).softmax(1)
+                        # Horizontal Flip
+                        p2 = model(torch.flip(imgs, dims=[3])).softmax(1)
+                        # Vertical Flip
+                        p3 = model(torch.flip(imgs, dims=[2])).softmax(1)
+                        # Both Flips
+                        p4 = model(torch.flip(imgs, dims=[2, 3])).softmax(1)
+                        p_avg = (p1 + p2 + p3 + p4) / 4.0
+                        local_preds.append(p_avg)
+            
+            local_preds = torch.cat(local_preds, dim=0)
+            # Gather all predictions from all GPUs
+            # DistributedSampler pads to make it divisible by world_size
+            world_preds = [torch.zeros_like(local_preds) for _ in range(world_size)]
+            dist.all_gather(world_preds, local_preds)
+            
+            # Reconstruction: sampler with shuffle=False uses rank::world_size indices
+            # Interleave results to get original order
+            full_preds = torch.stack(world_preds, dim=1).view(-1, 5)
+            # Truncate padding added by DistributedSampler
+            return full_preds[:dataset_len].cpu().numpy()
+
+        val_probs = predict_tta(val_loader, len(val_ds))
+        test_probs = predict_tta(test_loader, len(test_ds))
+        
+        if rank == 0:
+            return_dict[f'{model_key}_val'] = val_probs
+            return_dict[f'{model_key}_test'] = test_probs
+            
+        del model, optimizer, scheduler, train_loader, val_loader, test_loader
+        torch.cuda.empty_cache()
+        dist.barrier()
+
+    dist.destroy_process_group()
+
+# ===== Main Training Function =====
+
+def train_high_res_vision_ensemble(
+    X_train: X,
+    y_train: y,
+    X_val: X,
+    y_val: y,
+    X_test: X
+) -> Tuple[Predictions, Predictions]:
     """
-    Trains a tf_efficientnet_b4_ns model with Bi-Tempered Loss, Mixup, CutMix and 4-view TTA.
+    Trains ConvNeXt-Base and Swin-Base at 384px resolution using DDP and AMP.
+    Returns decoupled predictions for downstream weighted ensembling.
     """
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    num_classes = 5
-    batch_size = 16
-    epochs = 10
-    img_size = 512
+    print("Initializing High-Res Vision Ensemble training (ConvNeXt & Swin)...")
+    
+    world_size = torch.cuda.device_count()
+    if world_size < 2:
+        raise RuntimeError(f"Required 2 GPUs for DDP, but found {world_size}")
+        
+    manager = mp.Manager()
+    return_dict = manager.dict()
+    
+    # Use mp.spawn for clean DDP orchestration
+    mp.spawn(
+        ddp_worker,
+        args=(world_size, X_train, y_train, X_val, y_val, X_test, return_dict),
+        nprocs=world_size,
+        join=True
+    )
+    
+    # Extract decoupled model predictions
+    val_preds = {
+        "convnext": return_dict.get("convnext_val"),
+        "swin": return_dict.get("swin_val")
+    }
+    test_preds = {
+        "convnext": return_dict.get("convnext_test"),
+        "swin": return_dict.get("swin_test")
+    }
+    
+    # Sanity checks
+    for key in ["convnext", "swin"]:
+        if val_preds[key] is None or test_preds[key] is None:
+            raise RuntimeError(f"Training failed for model: {key}")
+        if np.isnan(val_preds[key]).any() or np.isnan(test_preds[key]).any():
+            raise ValueError(f"NaN detected in predictions for model: {key}")
 
-    # Transforms
-    train_transform = A.Compose([
-        A.RandomResizedCrop(size=(img_size, img_size), scale=(0.08, 1.0), ratio=(0.75, 1.333), p=1.0),
-        A.Transpose(p=0.5),
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
-        A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=30, p=0.5),
-        A.HueSaturationValue(hue_shift_limit=0.2, sat_shift_limit=0.2, val_shift_limit=0.2, p=0.5),
-        A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
-        A.CoarseDropout(max_holes=8, max_height=32, max_width=32, fill_value=0, p=0.5),
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), p=1.0),
-        ToTensorV2(),
-    ])
-
-    val_transform = A.Compose([
-        A.Resize(height=img_size, width=img_size),
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), p=1.0),
-        ToTensorV2(),
-    ])
-
-    # Datasets and Loaders
-    train_ds = CassavaDataset(X_train, y_train, data_root=os.path.join(BASE_DATA_PATH, "train_images"),
-                              transforms=train_transform)
-    val_ds = CassavaDataset(X_val, y_val, data_root=os.path.join(BASE_DATA_PATH, "train_images"),
-                            transforms=val_transform)
-    test_ds = CassavaDataset(X_test, None, data_root=os.path.join(BASE_DATA_PATH, "test_images"),
-                             transforms=val_transform)
-
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
-    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
-
-    # Model
-    model = timm.create_model('tf_efficientnet_b4_ns', pretrained=True, num_classes=num_classes)
-    model.to(device)
-
-    # Optimizer, Loss, Scheduler
-    optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-6)
-    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=epochs, T_mult=1, eta_min=1e-6)
-
-    best_acc = 0.0
-    best_model_wts = copy.deepcopy(model.state_dict())
-
-    # Training Loop
-    for epoch in range(epochs):
-        model.train()
-        for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device)
-            optimizer.zero_grad()
-
-            prob = np.random.rand()
-            if prob < 0.5:
-                q = np.random.rand()
-                if q < 0.25:
-                    # Mixup (alpha=0.4)
-                    images_mix, target_a, target_b, lam = mixup_data(images, labels, alpha=0.4, device=device)
-                    logits = model(images_mix)
-                    one_hot_a = F.one_hot(target_a, num_classes).float()
-                    one_hot_b = F.one_hot(target_b, num_classes).float()
-                    mixed_labels = lam * one_hot_a + (1 - lam) * one_hot_b
-                    loss = bi_tempered_logistic_loss(logits, mixed_labels, t1=0.8, t2=1.2)
-                elif q < 0.50:
-                    # CutMix (alpha=1.0)
-                    lam = np.random.beta(1.0, 1.0)
-                    rand_index = torch.randperm(images.size()[0]).to(device)
-                    target_a = labels
-                    target_b = labels[rand_index]
-                    bbx1, bby1, bbx2, bby2 = rand_bbox(images.size(), lam)
-                    images[:, :, bbx1:bbx2, bby1:bby2] = images[rand_index, :, bbx1:bbx2, bby1:bby2]
-                    lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (images.size()[-1] * images.size()[-2]))
-                    logits = model(images)
-                    one_hot_a = F.one_hot(target_a, num_classes).float()
-                    one_hot_b = F.one_hot(target_b, num_classes).float()
-                    mixed_labels = lam * one_hot_a + (1 - lam) * one_hot_b
-                    loss = bi_tempered_logistic_loss(logits, mixed_labels, t1=0.8, t2=1.2)
-                else:
-                    # No Aug (inside 50% branch)
-                    logits = model(images)
-                    one_hot_labels = F.one_hot(labels, num_classes).float()
-                    loss = bi_tempered_logistic_loss(logits, one_hot_labels, t1=0.8, t2=1.2)
-            else:
-                # No Aug (outside 50% branch)
-                logits = model(images)
-                one_hot_labels = F.one_hot(labels, num_classes).float()
-                loss = bi_tempered_logistic_loss(logits, one_hot_labels, t1=0.8, t2=1.2)
-
-            loss.backward()
-            optimizer.step()
-
-        # Validation for best weights selection
-        model.eval()
-        val_preds_epoch = []
-        with torch.no_grad():
-            for val_images, _ in val_loader:
-                val_images = val_images.to(device)
-                val_logits = model(val_images)
-                val_preds_epoch.append(F.softmax(val_logits, dim=1).cpu().numpy())
-        val_preds_epoch = np.concatenate(val_preds_epoch, axis=0)
-        acc = (val_preds_epoch.argmax(axis=1) == y_val.values).mean()
-
-        if acc > best_acc:
-            best_acc = acc
-            best_model_wts = copy.deepcopy(model.state_dict())
-
-        scheduler.step()
-
-    # Load best weights
-    model.load_state_dict(best_model_wts)
-
-    # Perform 4-view TTA Inference
-    val_predictions = tta_inference(model, val_loader, device)
-    test_predictions = tta_inference(model, test_loader, device)
-
-    return val_predictions, test_predictions
-
+    print("Training complete. Decoupled predictions generated.")
+    return val_preds, test_preds
 
 # ===== Model Registry =====
-PREDICTION_ENGINES: Dict[str, PredictionFunction] = {
-    "efficientnet_b4_ns_heavy": train_efficientnet_b4_ns_heavy,
+
+PREDICTION_ENGINES: Dict[str, ModelFn] = {
+    "high_res_vision_ensemble": train_high_res_vision_ensemble,
 }

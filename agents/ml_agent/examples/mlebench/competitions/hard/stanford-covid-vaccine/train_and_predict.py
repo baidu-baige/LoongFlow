@@ -1,226 +1,217 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-from typing import Any, Callable, Dict, Tuple
-
-import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
+import torch.optim as optim
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, TensorDataset
+import numpy as np
+import pandas as pd
+from typing import Tuple, Any, Dict, Callable
 
-BASE_DATA_PATH = "/root/workspace/evolux_ml/output/mlebench/stanford-covid-vaccine/prepared/public"
-OUTPUT_DATA_PATH = "output/832d0196-b83e-4fa9-8ea2-3588ff903a43/1/executor/output"
+# Task-adaptive type definitions
+X = np.ndarray           # Feature matrix: (N, 107, 111)
+y = np.ndarray           # Target vector: (N, 107, 5)
+Predictions = np.ndarray # Predictions: (N, 107, 5)
 
-# Type hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-PredictionFunction = Callable[[DT, DT, DT, DT, DT, Any], Tuple[DT, DT]]
+# Model Function Type
+ModelFn = Callable[
+    [X, y, X, y, X],
+    Tuple[Predictions, Predictions]
+]
 
+class MCRMSELoss(nn.Module):
+    """Mean Columnwise Root Mean Squared Error Loss calculated on the scored positions."""
+    def __init__(self, scored_len: int = 68):
+        super(MCRMSELoss, self).__init__()
+        self.scored_len = scored_len
 
-# ===== Helper Classes and Functions for GCN =====
+    def forward(self, y_pred, y_true):
+        # Slice to scored length: (N, 68, 5)
+        y_pred = y_pred[:, :self.scored_len, :]
+        y_true = y_true[:, :self.scored_len, :]
+        
+        # Calculate RMSE per column
+        mse = torch.mean((y_pred - y_true) ** 2, dim=1) # (N, 5)
+        rmse = torch.sqrt(mse + 1e-8) # (N, 5)
+        return torch.mean(rmse) # Scalar mean over samples and columns
 
-class RNADataset(Dataset):
-    def __init__(self, X: pd.DataFrame, y: pd.DataFrame = None):
-        self.X = X
-        self.y = y
-        self.target_cols = ['reactivity', 'deg_Mg_pH10', 'deg_pH10', 'deg_Mg_50C', 'deg_50C']
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        row = self.X.iloc[idx]
-        nf = torch.tensor(row['node_features'], dtype=torch.float32)
-        adj = torch.tensor(row['adj_matrix'], dtype=torch.float32)
-        sn_filter = torch.tensor(row['SN_filter'], dtype=torch.float32)
-        seq_scored = torch.tensor(row['seq_scored'], dtype=torch.long)
-        seq_len = torch.tensor(row['seq_length'], dtype=torch.long)
-
-        if self.y is not None:
-            y_row = self.y.iloc[idx]
-            # Targets are lists of length 'seq_scored'
-            targets_list = [y_row[col] for col in self.target_cols]
-            targets_np = np.stack(targets_list, axis=1)  # (seq_scored, 5)
-            # Pad targets to full sequence length for easier batching
-            full_targets = np.zeros((nf.shape[0], 5), dtype=np.float32)
-            full_targets[:targets_np.shape[0], :] = targets_np
-            return nf, adj, torch.tensor(full_targets, dtype=torch.float32), sn_filter, seq_scored, seq_len
-        else:
-            # For test, return zero targets as placeholder
-            return nf, adj, torch.zeros((nf.shape[0], 5), dtype=torch.float32), sn_filter, torch.tensor(0,
-                                                                                                        dtype=torch.long), seq_len
-
-
-def collate_fn(batch):
-    nfs, adjs, targets, sns, scored_lens, seq_lens = zip(*batch)
-    max_len = max([x.shape[0] for x in nfs])
-
-    padded_nfs = torch.stack([F.pad(x, (0, 0, 0, max_len - x.shape[0])) for x in nfs])
-    padded_adjs = torch.stack([F.pad(x, (0, max_len - x.shape[1], 0, max_len - x.shape[0])) for x in adjs])
-    padded_targets = torch.stack([F.pad(x, (0, 0, 0, max_len - x.shape[0])) for x in targets])
-
-    return padded_nfs, padded_adjs, padded_targets, torch.stack(sns), torch.stack(scored_lens), torch.stack(seq_lens)
-
-
-class GCNLayer(nn.Module):
-    def __init__(self, in_features: int, out_features: int):
-        super(GCNLayer, self).__init__()
-        self.linear = nn.Linear(in_features, out_features)
-
+class GNNLayer(nn.Module):
+    """Simple Graph Convolution Layer with LayerNorm and Residual Connection."""
+    def __init__(self, in_channels: int, out_channels: int):
+        super(GNNLayer, self).__init__()
+        self.lin = nn.Linear(in_channels, out_channels)
+        self.norm = nn.LayerNorm(out_channels)
+        self.activation = nn.GELU()
+        
     def forward(self, x: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
-        # x: (B, L, Fin), adj: (B, L, L)
-        x = self.linear(x)
-        return torch.matmul(adj, x)
+        # x: (N, L, C), adj: (N, L, L)
+        # Graph convolution: out = ReLU(A * X * W)
+        support = self.lin(x) # (N, L, out_channels)
+        out = torch.matmul(adj, support) # (N, L, out_channels)
+        out = self.norm(out)
+        out = self.activation(out)
+        return out + x if x.shape == out.shape else out
 
-
-class GCNModel(nn.Module):
-    def __init__(self, input_dim: int = 14, hidden_dim: int = 128, output_dim: int = 5, n_layers: int = 4):
-        super(GCNModel, self).__init__()
-        self.embedding = nn.Linear(input_dim, hidden_dim)
-        self.layers = nn.ModuleList([GCNLayer(hidden_dim, hidden_dim) for _ in range(n_layers)])
-        self.readout = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, output_dim)
+class RNAGNN(nn.Module):
+    def __init__(self, embed_dim_seq=64, embed_dim_struct=32, embed_dim_loop=32):
+        super(RNAGNN, self).__init__()
+        # Embeddings for categorical features
+        self.emb_seq = nn.Embedding(4, embed_dim_seq)
+        self.emb_struct = nn.Embedding(3, embed_dim_struct)
+        self.emb_loop = nn.Embedding(7, embed_dim_loop)
+        
+        # Spatial Dropout (Dropout2d applied to channels)
+        self.spatial_dropout = nn.Dropout2d(0.2)
+        
+        # Input projection to GNN dimension
+        node_dim = embed_dim_seq + embed_dim_struct + embed_dim_loop + 1 # +1 for normalized pos
+        self.proj = nn.Linear(node_dim, 128)
+        
+        # Stacked GNN Layers
+        self.gnn_layers = nn.ModuleList([
+            GNNLayer(128, 128) for _ in range(4)
+        ])
+        
+        # Multi-target regression head
+        self.head = nn.Sequential(
+            nn.Linear(128, 128),
+            nn.GELU(),
+            nn.Dropout(0.2),
+            nn.Linear(128, 64),
+            nn.GELU(),
+            nn.Linear(64, 5)
         )
 
-    def forward(self, x: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
-        x = self.embedding(x)
-        for layer in self.layers:
-            h = layer(x, adj)
-            h = F.relu(h)
-            x = x + h  # Residual connection
-        return self.readout(x)
+    def forward(self, x_node: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
+        # x_node: (N, 107, 4) -> [seq_idx, struct_idx, loop_idx, pos]
+        seq = self.emb_seq(x_node[:, :, 0].long())
+        struct = self.emb_struct(x_node[:, :, 1].long())
+        loop = self.emb_loop(x_node[:, :, 2].long())
+        pos = x_node[:, :, 3:4]
+        
+        # Concatenate features along the last dimension
+        x = torch.cat([seq, struct, loop, pos], dim=-1) # (N, 107, node_dim)
+        
+        # Apply Spatial Dropout: (N, L, C) -> (N, C, L) -> Dropout -> (N, L, C)
+        x = x.transpose(1, 2)
+        x = self.spatial_dropout(x)
+        x = x.transpose(1, 2)
+        
+        x = self.proj(x)
+        
+        # Pass through GNN layers
+        for layer in self.gnn_layers:
+            x = layer(x, adj)
+        
+        # Position-wise output
+        return self.head(x)
 
-
-def mcrmse_loss(pred, target, scored_lens, weights):
+def train_gnn_model(
+    X_train: X,
+    y_train: y,
+    X_val: X,
+    y_val: y,
+    X_test: X
+) -> Tuple[Predictions, Predictions]:
     """
-    Computes weighted MCRMSE loss.
-    pred, target: (B, L, 5)
-    scored_lens: (B,)
-    weights: (B,)
+    Trains a Graph Neural Network on RNA sequences and predicts 5 degradation values per base.
     """
-    B, L, C = pred.shape
-    device = pred.device
+    # 1. Device configuration
+    # Utilizing the first H20 GPU. For this small dataset, multi-GPU overhead exceeds benefits.
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"Training GNN on device: {device}")
 
-    # Create mask for scored positions
-    mask = torch.arange(L, device=device).expand(B, L) < scored_lens.unsqueeze(1)
-    mask = mask.unsqueeze(-1).expand(B, L, C)  # (B, L, 5)
+    # 2. Data Preparation and Adjacency Normalization
+    def prepare_data(X_arr):
+        # Node features are the first 4 dimensions, Adjacency is the rest (107x107)
+        node_feats = X_arr[:, :, :4]
+        adj = X_arr[:, :, 4:]
+        # Add self-loops to Adjacency
+        adj = adj + np.eye(107)[None, :, :]
+        return torch.tensor(node_feats, dtype=torch.float32), torch.tensor(adj, dtype=torch.float32)
 
-    # MSE per position and target
-    mse = (pred - target) ** 2
-    mse = mse * mask.float()
+    X_train_node, X_train_adj = prepare_data(X_train)
+    y_train_torch = torch.tensor(y_train, dtype=torch.float32)
+    
+    X_val_node, X_val_adj = prepare_data(X_val)
+    y_val_torch = torch.tensor(y_val, dtype=torch.float32)
+    
+    X_test_node, X_test_adj = prepare_data(X_test)
 
-    # Mean MSE per sample and target
-    mse_sum = mse.sum(dim=1)  # (B, 5)
-    # Avoid division by zero for test samples in val loader if any
-    safe_scored_lens = torch.clamp(scored_lens, min=1)
-    mse_mean = mse_sum / safe_scored_lens.unsqueeze(1).float()
-
-    # RMSE per sample and target
-    rmse = torch.sqrt(mse_mean + 1e-8)  # (B, 5)
-
-    # MCRMSE per sample
-    mcrmse_per_sample = rmse.mean(dim=1)  # (B,)
-
-    # Weighted average over batch
-    return (mcrmse_per_sample * weights).mean()
-
-
-# ===== Training Functions =====
-
-def train_gcn(
-    X_train: pd.DataFrame,
-    y_train: pd.DataFrame,
-    X_val: pd.DataFrame,
-    y_val: pd.DataFrame,
-    X_test: pd.DataFrame
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Trains a GCN model and returns predictions for validation and test sets.
-    """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Hyperparameters
+    # Use DataLoaders for efficient batching
     batch_size = 64
-    epochs = 100
-    lr = 0.001
+    train_loader = DataLoader(TensorDataset(X_train_node, X_train_adj, y_train_torch), batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(TensorDataset(X_val_node, X_val_adj, y_val_torch), batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(TensorDataset(X_test_node, X_test_adj), batch_size=batch_size, shuffle=False)
 
-    # Prepare DataLoaders
-    train_ds = RNADataset(X_train, y_train)
-    val_ds = RNADataset(X_val, y_val)
-    test_ds = RNADataset(X_test)
+    # 3. Model, Optimizer, and Loss Setup
+    model = RNAGNN().to(device)
+    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+    criterion = MCRMSELoss(scored_len=68)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
-    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+    # 4. Training Loop
+    epochs = 50
+    best_val_loss = float('inf')
+    best_model_state = None
 
-    # Initialize Model, Optimizer, Scheduler
-    model = GCNModel(input_dim=14, hidden_dim=128, output_dim=5, n_layers=4).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-
-    # Training loop
+    print(f"Starting training for {epochs} epochs...")
     for epoch in range(epochs):
         model.train()
-        for nfs, adjs, targets, sns, scored_lens, seq_lens in train_loader:
-            nfs, adjs, targets, sns, scored_lens = nfs.to(device), adjs.to(device), targets.to(device), sns.to(
-                device), scored_lens.to(device)
-
+        train_loss = 0
+        for b_node, b_adj, b_y in train_loader:
+            b_node, b_adj, b_y = b_node.to(device), b_adj.to(device), b_y.to(device)
+            
             optimizer.zero_grad()
-            preds = model(nfs, adjs)
-
-            # Weighted loss: 2x for SN_filter == 1
-            weights = 1.0 + sns
-            loss = mcrmse_loss(preds, targets, scored_lens, weights)
-
+            outputs = model(b_node, b_adj)
+            loss = criterion(outputs, b_y)
             loss.backward()
             optimizer.step()
-
+            train_loss += loss.item()
+        
         scheduler.step()
-
-        # Validation for early feedback (optional logging)
+        
+        # Validation
         model.eval()
+        val_loss = 0
         with torch.no_grad():
-            pass  # Validation logic can be added here if needed
+            for b_node, b_adj, b_y in val_loader:
+                b_node, b_adj, b_y = b_node.to(device), b_adj.to(device), b_y.to(device)
+                outputs = model(b_node, b_adj)
+                v_loss = criterion(outputs, b_y)
+                val_loss += v_loss.item()
+        
+        avg_train_loss = train_loss / len(train_loader)
+        avg_val_loss = val_loss / len(val_loader)
+        
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            best_model_state = {k: v.cpu() for k, v in model.state_dict().items()}
+            
+        if (epoch + 1) % 10 == 0:
+            print(f"Epoch {epoch+1:02d} | Train MCRMSE: {avg_train_loss:.4f} | Val MCRMSE: {avg_val_loss:.4f}")
 
-    # Generate predictions
-    def get_predictions(loader, ids):
-        model.eval()
+    # 5. Inference
+    model.load_state_dict(best_model_state)
+    model.to(device)
+    model.eval()
+    
+    def predict(loader):
         all_preds = []
-        all_seq_lens = []
         with torch.no_grad():
             for batch in loader:
-                nfs, adjs, _, _, _, seq_lens = batch
-                nfs, adjs = nfs.to(device), adjs.to(device)
-                preds = model(nfs, adjs).cpu().numpy()
-                for i in range(len(preds)):
-                    length = seq_lens[i].item()  # Convert tensor to Python int for slicing
-                    all_preds.append(preds[i, :length, :])
+                # loaders yield (node, adj, [y])
+                b_node, b_adj = batch[0].to(device), batch[1].to(device)
+                preds = model(b_node, b_adj)
+                all_preds.append(preds.cpu().numpy())
+        return np.concatenate(all_preds, axis=0)
 
-        target_cols = ['reactivity', 'deg_Mg_pH10', 'deg_pH10', 'deg_Mg_50C', 'deg_50C']
-        formatted_rows = []
-        for i, p in enumerate(all_preds):
-            row = {'id': ids.iloc[i]}
-            for j, col in enumerate(target_cols):
-                row[col] = p[:, j].tolist()
-            formatted_rows.append(row)
-        return pd.DataFrame(formatted_rows)
+    val_preds = predict(val_loader)
+    test_preds = predict(test_loader)
 
-    val_predictions = get_predictions(val_loader, X_val['id'])
-    test_predictions = get_predictions(test_loader, X_test['id'])
-
-    return val_predictions, test_predictions
-
+    print(f"Training complete. Best Val MCRMSE: {best_val_loss:.4f}")
+    return val_preds, test_preds
 
 # ===== Model Registry =====
-# Register ALL training functions here for the pipeline to use
-# Key: Descriptive model name (e.g., "lgbm_tuned", "neural_net")
-# Value: The training function reference
-
-PREDICTION_ENGINES: Dict[str, PredictionFunction] = {
-    "gcn_base": train_gcn,
+PREDICTION_ENGINES: Dict[str, ModelFn] = {
+    "gnn_rna": train_gnn_model,
 }

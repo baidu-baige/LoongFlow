@@ -1,59 +1,73 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-import gc
-from typing import Callable, Dict, Tuple
-
-import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
-from scipy.stats import pearsonr
-from torch.optim import AdamW
-from torch.utils.data import DataLoader, Dataset
-from transformers import AutoConfig, AutoModel, get_linear_schedule_with_warmup
+import torch.optim as optim
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader, Dataset, DistributedSampler
+from transformers import AutoModel, AutoConfig, get_cosine_schedule_with_warmup
+import pandas as pd
+import numpy as np
+import os
+import gc
+from typing import Tuple, Any, Dict, Callable
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/us-patent-phrase-to-phrase-matching/prepared/public"
-OUTPUT_DATA_PATH = "output/aefcc010-8f21-4ecb-b149-7bf99579e6d3/6/executor/output"
+# Task-adaptive type definitions
+X = pd.DataFrame
+y = pd.Series
+Predictions = np.ndarray
 
-# Type hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-PredictionFunction = Callable[[DT, DT, DT, DT, DT], Tuple[DT, DT]]
+# Model Function Type
+ModelFn = Callable[
+    [X, y, X, y, X],
+    Tuple[Predictions, Predictions]
+]
 
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/2-05/evolux/output/mlebench/us-patent-phrase-to-phrase-matching/prepared/public"
+OUTPUT_DATA_PATH = "output/02d42284-9bf3-4f97-ab6c-7ea839095b54/3/executor/output"
 
-# ===== Dataset Class =====
+# ===== PyTorch Dataset =====
 
 class PatentDataset(Dataset):
-    def __init__(self, inputs: pd.DataFrame, labels: pd.Series = None):
-        # inputs contains 'input_ids' and 'attention_mask' as lists of ints
-        self.input_ids = inputs['input_ids'].values
-        self.attention_mask = inputs['attention_mask'].values
-        self.labels = labels.values if labels is not None else None
+    """
+    Dataset class for patent phrase matching. Handles tokenized inputs and scores.
+    """
+    def __init__(self, X_df: pd.DataFrame, y_ser: pd.Series = None):
+        # Convert Series/DataFrame columns to lists for efficient indexing
+        self.input_ids = X_df['input_ids'].tolist()
+        self.attention_mask = X_df['attention_mask'].tolist()
+        self.token_type_ids = X_df['token_type_ids'].tolist() if 'token_type_ids' in X_df.columns else None
+        self.targets = y_ser.values if y_ser is not None else None
 
     def __len__(self):
         return len(self.input_ids)
 
-    def __getitem__(self, item):
-        inputs = {
-            'input_ids': torch.tensor(self.input_ids[item], dtype=torch.long),
-            'attention_mask': torch.tensor(self.attention_mask[item], dtype=torch.long),
+    def __getitem__(self, idx):
+        item = {
+            'input_ids': torch.tensor(self.input_ids[idx], dtype=torch.long),
+            'attention_mask': torch.tensor(self.attention_mask[idx], dtype=torch.long),
         }
-        if self.labels is not None:
-            return inputs, torch.tensor(self.labels[item], dtype=torch.float)
-        return inputs
+        if self.token_type_ids is not None:
+            item['token_type_ids'] = torch.tensor(self.token_type_ids[idx], dtype=torch.long)
+        
+        if self.targets is not None:
+            item['target'] = torch.tensor(self.targets[idx], dtype=torch.float)
+        
+        return item
 
-
-# ===== Model Class =====
+# ===== Model Definition =====
 
 class PatentModel(nn.Module):
+    """
+    DeBERTa-v3-large model with a regression head and Multi-sample Dropout.
+    """
     def __init__(self, model_name: str):
         super().__init__()
         self.config = AutoConfig.from_pretrained(model_name)
-        # Load pre-trained backbone
-        self.model = AutoModel.from_pretrained(model_name, config=self.config, use_safetensors=True)
+        self.model = AutoModel.from_pretrained(model_name)
         self.fc = nn.Linear(self.config.hidden_size, 1)
+        # Multi-sample dropout: 5 samples with increasing dropout rates
+        self.dropouts = nn.ModuleList([nn.Dropout(0.1 * (i + 1)) for i in range(5)])
         self._init_weights(self.fc)
 
     def _init_weights(self, module):
@@ -62,150 +76,173 @@ class PatentModel(nn.Module):
             if module.bias is not None:
                 module.bias.data.zero_()
 
-    def forward(self, input_ids, attention_mask):
-        outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
-        last_hidden_state = outputs.last_hidden_state
+    def forward(self, input_ids, attention_mask, token_type_ids=None):
+        outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        # Use [CLS] token representation
+        last_hidden_state = outputs.last_hidden_state[:, 0, :]
+        
+        # Multi-sample dropout averaging
+        logits = torch.stack([
+            self.fc(dropout(last_hidden_state)) for dropout in self.dropouts
+        ], dim=0).mean(dim=0)
+        
+        return logits.view(-1)
 
-        # Mean Pooling: average the hidden states of non-padding tokens
-        input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
-        sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
-        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-        mean_embeddings = sum_embeddings / sum_mask
+# ===== DDP Worker Function =====
 
-        logits = self.fc(mean_embeddings)
-        return logits
+def ddp_worker(rank: int, world_size: int, X_train, y_train, X_val, y_val, X_test, queue):
+    """
+    Worker function for Distributed Data Parallel training.
+    """
+    # Initialize process group
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
 
+    # Technical Specification Parameters
+    model_name = "microsoft/deberta-v3-large"
+    batch_size = 8 # per GPU
+    epochs = 5
+    lr_backbone = 2e-5
+    lr_head = 5e-5
+    
+    # Datasets
+    train_ds = PatentDataset(X_train, y_train)
+    val_ds = PatentDataset(X_val, y_val)
+    test_ds = PatentDataset(X_test)
+    
+    # Samplers
+    train_sampler = DistributedSampler(train_ds, num_replicas=world_size, rank=rank, shuffle=True)
+    
+    # DataLoaders
+    # Validation and test are small enough to process on each rank or rank 0
+    train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=train_sampler, num_workers=4, pin_memory=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size * 2, shuffle=False, num_workers=4, pin_memory=True)
+    test_loader = DataLoader(test_ds, batch_size=batch_size * 2, shuffle=False, num_workers=4, pin_memory=True)
+
+    # Model and DDP setup
+    model = PatentModel(model_name).to(rank)
+    model = DDP(model, device_ids=[rank])
+    
+    # BCEWithLogitsLoss for regression in range [0, 1]
+    criterion = nn.BCEWithLogitsLoss()
+    
+    # Differential learning rates
+    optimizer_grouped_parameters = [
+        {'params': [p for n, p in model.module.model.named_parameters()], 'lr': lr_backbone},
+        {'params': [p for n, p in model.module.named_parameters() if "model" not in n], 'lr': lr_head},
+    ]
+    optimizer = optim.AdamW(optimizer_grouped_parameters)
+    
+    num_train_steps = len(train_loader) * epochs
+    num_warmup_steps = int(0.1 * num_train_steps)
+    scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps, num_train_steps)
+
+    # Training Loop
+    print(f"[Rank {rank}] Starting training for {epochs} epochs...")
+    for epoch in range(epochs):
+        model.train()
+        train_sampler.set_epoch(epoch)
+        for batch in train_loader:
+            optimizer.zero_grad()
+            ids = batch['input_ids'].to(rank)
+            mask = batch['attention_mask'].to(rank)
+            ttid = batch.get('token_type_ids', None)
+            if ttid is not None: ttid = ttid.to(rank)
+            targets = batch['target'].to(rank)
+            
+            outputs = model(ids, mask, ttid)
+            loss = criterion(outputs, targets)
+            loss.backward()
+            optimizer.step()
+            scheduler.step()
+
+    # Inference (Rank 0 handles final predictions)
+    model.eval()
+    val_preds = []
+    test_preds = []
+    
+    if rank == 0:
+        print(f"[Rank 0] Training finished. Starting inference...")
+        with torch.no_grad():
+            for batch in val_loader:
+                ids = batch['input_ids'].to(rank)
+                mask = batch['attention_mask'].to(rank)
+                ttid = batch.get('token_type_ids', None)
+                if ttid is not None: ttid = ttid.to(rank)
+                outputs = model(ids, mask, ttid)
+                val_preds.append(torch.sigmoid(outputs).cpu().numpy())
+        val_preds = np.concatenate(val_preds)
+
+        with torch.no_grad():
+            for batch in test_loader:
+                ids = batch['input_ids'].to(rank)
+                mask = batch['attention_mask'].to(rank)
+                ttid = batch.get('token_type_ids', None)
+                if ttid is not None: ttid = ttid.to(rank)
+                outputs = model(ids, mask, ttid)
+                test_preds.append(torch.sigmoid(outputs).cpu().numpy())
+        test_preds = np.concatenate(test_preds)
+        
+        # Push results to queue
+        queue.put((val_preds, test_preds))
+
+    dist.destroy_process_group()
 
 # ===== Training Functions =====
 
-def train_deberta_v3_large(
-    X_train: DT,
-    y_train: DT,
-    X_val: DT,
-    y_val: DT,
-    X_test: DT
-) -> Tuple[DT, DT]:
+def train_deberta_v3_large_v2(
+    X_train: X,
+    y_train: y,
+    X_val: X,
+    y_val: y,
+    X_test: X
+) -> Tuple[Predictions, Predictions]:
     """
-    Trains a DeBERTa-v3-large model using Mean Pooling, BCE Loss, and Mixed Precision.
+    Trains DeBERTa-v3-large with 5 epochs and Multi-sample Dropout using multi-GPU DDP.
     """
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model_name = "microsoft/deberta-v3-large"
+    print(f"Execution: train_deberta_v3_large_v2 (Stage 4)")
+    
+    world_size = torch.cuda.device_count()
+    if world_size < 1:
+        raise RuntimeError("No GPU available for training. This component requires GPU acceleration.")
+    
+    print(f"Initializing DDP on {world_size} GPUs.")
 
-    # Configuration
-    batch_size = 12  # Adjusted for A10 VRAM (23GB) with large model
-    epochs = 5
-    encoder_lr = 1e-5
-    decoder_lr = 5e-5
-    weight_decay = 0.01
-    eps = 1e-6
-    warmup_ratio = 0.1
+    # Using 'spawn' context for multi-processing
+    ctx = mp.get_context('spawn')
+    queue = ctx.Queue()
+    
+    # Spawn processes across available GPUs
+    mp.spawn(
+        ddp_worker,
+        args=(world_size, X_train, y_train, X_val, y_val, X_test, queue),
+        nprocs=world_size,
+        join=True
+    )
+    
+    # Retrieve results from Rank 0
+    if not queue.empty():
+        val_preds, test_preds = queue.get()
+    else:
+        raise RuntimeError("Training failed: No predictions returned from DDP workers.")
 
-    # Datasets and Loaders
-    train_dataset = PatentDataset(X_train, y_train)
-    valid_dataset = PatentDataset(X_val, y_val)
-    test_dataset = PatentDataset(X_test, None)
+    # Verify output quality
+    if np.isnan(val_preds).any() or np.isinf(val_preds).any():
+        raise ValueError("Validation predictions contain NaN or Infinity.")
+    if np.isnan(test_preds).any() or np.isinf(test_preds).any():
+        raise ValueError("Test predictions contain NaN or Infinity.")
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
-    valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
-
-    # Model Initialization
-    model = PatentModel(model_name).to(device)
-
-    # Differential Learning Rates and Weight Decay
-    no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.model.named_parameters() if not any(nd in n for nd in no_decay)],
-         'lr': encoder_lr, 'weight_decay': weight_decay},
-        {'params': [p for n, p in model.model.named_parameters() if any(nd in n for nd in no_decay)],
-         'lr': encoder_lr, 'weight_decay': 0.0},
-        {'params': [p for n, p in model.fc.named_parameters() if not any(nd in n for nd in no_decay)],
-         'lr': decoder_lr, 'weight_decay': weight_decay},
-        {'params': [p for n, p in model.fc.named_parameters() if any(nd in n for nd in no_decay)],
-         'lr': decoder_lr, 'weight_decay': 0.0}
-    ]
-
-    optimizer = AdamW(optimizer_grouped_parameters, lr=encoder_lr, eps=eps)
-
-    num_training_steps = len(train_loader) * epochs
-    num_warmup_steps = int(num_training_steps * warmup_ratio)
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps,
-                                                num_training_steps=num_training_steps)
-
-    criterion = nn.BCEWithLogitsLoss()
-    scaler = torch.cuda.amp.GradScaler()  # Automatic Mixed Precision
-
-    best_score = -1.0
-    best_val_preds = None
-    best_model_state = None
-
-    # Training Loop
-    for epoch in range(epochs):
-        model.train()
-        for step, (inputs, labels) in enumerate(train_loader):
-            for k, v in inputs.items():
-                inputs[k] = v.to(device)
-            labels = labels.to(device)
-
-            optimizer.zero_grad()
-            with torch.cuda.amp.autocast():  # AMP
-                logits = model(**inputs)
-                loss = criterion(logits.view(-1, 1), labels.view(-1, 1))
-
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-            scheduler.step()
-
-        # Validation
-        model.eval()
-        val_preds = []
-        val_labels = []
-        with torch.no_grad():
-            for inputs, labels in valid_loader:
-                for k, v in inputs.items():
-                    inputs[k] = v.to(device)
-                logits = model(**inputs)
-                preds = torch.sigmoid(logits).view(-1).cpu().numpy()
-                val_preds.append(preds)
-                val_labels.append(labels.numpy())
-
-        val_preds = np.concatenate(val_preds)
-        val_labels = np.concatenate(val_labels)
-
-        # Calculate Pearson Correlation
-        score, _ = pearsonr(val_labels, val_preds)
-
-        if score > best_score:
-            best_score = score
-            best_val_preds = val_preds
-            best_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
-
-    # Inference on Test Set using Best Model state
-    model.load_state_dict(best_model_state)
-    model.to(device)
-    model.eval()
-    test_preds = []
-    with torch.no_grad():
-        for inputs in test_loader:
-            for k, v in inputs.items():
-                inputs[k] = v.to(device)
-            logits = model(**inputs)
-            preds = torch.sigmoid(logits).view(-1).cpu().numpy()
-            test_preds.append(preds)
-
-    test_preds = np.concatenate(test_preds)
-
-    # Cleanup to manage A10 memory
-    del model, optimizer, scheduler, train_loader, valid_loader, test_loader, best_model_state, scaler
+    # Resource cleanup
     gc.collect()
     torch.cuda.empty_cache()
 
-    return best_val_preds, test_preds
-
+    print(f"Training complete. Val preds: {len(val_preds)}, Test preds: {len(test_preds)}")
+    return val_preds, test_preds
 
 # ===== Model Registry =====
 
-PREDICTION_ENGINES: Dict[str, PredictionFunction] = {
-    "deberta_v3_large": train_deberta_v3_large,
+PREDICTION_ENGINES: Dict[str, ModelFn] = {
+    "deberta_v3_large_v2": train_deberta_v3_large_v2,
 }

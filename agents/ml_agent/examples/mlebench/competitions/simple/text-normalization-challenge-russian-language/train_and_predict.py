@@ -1,388 +1,242 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-import re
-from typing import Any, Callable, Dict, Tuple
-
+import os
+import cudf
 import numpy as np
 import pandas as pd
+import xgboost as xgb
+import re
+from typing import Tuple, Dict, Any, Callable
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/text-normalization-challenge-russian-language/prepared/public"
-OUTPUT_DATA_PATH = "output/dce1a922-fb4b-4006-9d03-6f53b7ea0718/1/executor/output"
+# Dataset and Output Paths
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-12/evolux/output/mlebench/text-normalization-challenge-russian-language/prepared/public"
+OUTPUT_DATA_PATH = "output/ecfe1a48-59fb-4170-a38b-6ffb4a298ec0/10/executor/output"
 
-# Type hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-PredictionFunction = Callable[[DT, DT, DT, DT, DT, Any], Tuple[DT, DT]]
+# Task-adaptive type definitions
+X = cudf.DataFrame
+y = cudf.Series
+Predictions = pd.Series
 
+# Model Function Type Definition
+ModelFn = Callable[
+    [X, y, X, y, X],
+    Tuple[Predictions, Predictions]
+]
 
-class RussianTextNormalizer:
+# ===== Training Functions =====
+
+def train_phonetic_xgb_engine(
+    X_train: X,
+    y_train: y,
+    X_val: X,
+    y_val: y,
+    X_test: X
+) -> Tuple[Predictions, Predictions]:
     """
-    A lookup-based text normalizer for Russian language.
-    Uses training data to build comprehensive lookup tables and
-    applies rule-based transformations for unseen tokens.
+    Trains an XGBoost classifier for token categorization and applies a 
+    phonetically-precise transformation engine for Russian text normalization.
     """
-
-    def __init__(self):
-        self.before_to_after = {}  # Direct lookup: before -> most common after
-        self.before_to_after_by_context = {}  # Context-aware lookup
-        self.class_patterns = {}  # Patterns for each class
-
-        # Russian number words
-        self.units = ['', 'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять']
-        self.units_fem = ['', 'одна', 'две', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять']
-        self.teens = ['десять', 'одиннадцать', 'двенадцать', 'тринадцать', 'четырнадцать',
-                      'пятнадцать', 'шестнадцать', 'семнадцать', 'восемнадцать', 'девятнадцать']
-        self.tens = ['', '', 'двадцать', 'тридцать', 'сорок', 'пятьдесят',
-                     'шестьдесят', 'семьдесят', 'восемьдесят', 'девяносто']
-        self.hundreds = ['', 'сто', 'двести', 'триста', 'четыреста', 'пятьсот',
-                         'шестьсот', 'семьсот', 'восемьсот', 'девятьсот']
-
-        # Ordinal forms (nominative masculine)
-        self.ordinal_units = ['', 'первый', 'второй', 'третий', 'четвёртый', 'пятый',
-                              'шестой', 'седьмой', 'восьмой', 'девятый']
-        self.ordinal_teens = ['десятый', 'одиннадцатый', 'двенадцатый', 'тринадцатый',
-                              'четырнадцатый', 'пятнадцатый', 'шестнадцатый',
-                              'семнадцатый', 'восемнадцатый', 'девятнадцатый']
-        self.ordinal_tens = ['', '', 'двадцатый', 'тридцатый', 'сороковой', 'пятидесятый',
-                             'шестидесятый', 'семидесятый', 'восьмидесятый', 'девяностый']
-        self.ordinal_hundreds = ['', 'сотый', 'двухсотый', 'трёхсотый', 'четырёхсотый',
-                                 'пятисотый', 'шестисотый', 'семисотый', 'восьмисотый', 'девятисотый']
-
-        # Patterns for classification
-        self.punct_pattern = re.compile(r'^[.,;:!?\-—–()[\]{}«»"\'\s…]+$')
-        self.numeric_pattern = re.compile(r'^\d+$')
-        self.date_pattern = re.compile(
-            r'\d{1,2}\s*(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)',
-            re.IGNORECASE)
-        self.year_pattern = re.compile(r'^\d{4}\s*(год|года|году)?$', re.IGNORECASE)
-        self.time_pattern = re.compile(r'^\d{1,2}:\d{2}(:\d{2})?$')
-        self.roman_pattern = re.compile(r'^[IVXLCDM]+$', re.IGNORECASE)
-        self.latin_pattern = re.compile(r'[a-zA-Z]')
-        self.cyrillic_pattern = re.compile(r'[а-яА-ЯёЁ]')
-
-    def fit(self, X_train: pd.DataFrame, y_train: pd.Series):
-        """Build lookup tables from training data."""
-        print("Building lookup tables...")
-
-        # Combine for easier processing
-        train_data = X_train.copy()
-        train_data['after'] = y_train.values
-
-        # Build primary lookup: before -> most common after
-        before_after_counts = train_data.groupby(['before', 'after']).size().reset_index(name='count')
-        idx = before_after_counts.groupby('before')['count'].idxmax()
-        most_common = before_after_counts.loc[idx]
-
-        for _, row in most_common.iterrows():
-            self.before_to_after[row['before']] = row['after']
-
-        print(f"  Built primary lookup with {len(self.before_to_after)} entries")
-
-        # Build context-aware lookup for ambiguous tokens
-        # Key: (prev_token, before, next_token) -> after
-        train_data = train_data.sort_values(['sentence_id', 'token_id']).reset_index(drop=True)
-        train_data['prev_before'] = train_data.groupby('sentence_id')['before'].shift(1).fillna('<START>')
-        train_data['next_before'] = train_data.groupby('sentence_id')['before'].shift(-1).fillna('<END>')
-
-        # Find tokens with multiple possible transformations
-        ambiguous_tokens = before_after_counts.groupby('before').size()
-        ambiguous_tokens = ambiguous_tokens[ambiguous_tokens > 1].index.tolist()
-
-        # Build context lookup for ambiguous tokens
-        ambiguous_data = train_data[train_data['before'].isin(ambiguous_tokens)]
-        context_counts = ambiguous_data.groupby(['prev_before', 'before', 'next_before', 'after']).size().reset_index(
-            name='count')
-
-        for before_token in ambiguous_tokens[:10000]:  # Limit to top 10k ambiguous tokens
-            token_contexts = context_counts[context_counts['before'] == before_token]
-            if len(token_contexts) > 0:
-                for _, row in token_contexts.iterrows():
-                    key = (row['prev_before'], row['before'], row['next_before'])
-                    if key not in self.before_to_after_by_context:
-                        self.before_to_after_by_context[key] = (row['after'], row['count'])
-                    elif row['count'] > self.before_to_after_by_context[key][1]:
-                        self.before_to_after_by_context[key] = (row['after'], row['count'])
-
-        print(f"  Built context lookup with {len(self.before_to_after_by_context)} entries")
-
-        return self
-
-    def _classify_token(self, token: str) -> str:
-        """Classify a token into a category."""
-        if not token or pd.isna(token):
-            return 'PLAIN'
-
-        token = str(token)
-
-        if self.punct_pattern.match(token):
-            return 'PUNCT'
-        if self.time_pattern.match(token):
-            return 'TIME'
-        if self.date_pattern.search(token):
-            return 'DATE'
-        if self.year_pattern.match(token):
-            return 'DATE'
-        if self.roman_pattern.match(token):
-            return 'ORDINAL'
-        if self.numeric_pattern.match(token):
-            return 'CARDINAL'
-        if self.latin_pattern.search(token) and not self.cyrillic_pattern.search(token):
-            return 'ELECTRONIC'
-
-        return 'PLAIN'
-
-    def _number_to_words(self, n: int, feminine: bool = False) -> str:
-        """Convert a number to Russian words."""
-        if n == 0:
-            return 'ноль'
-
-        if n < 0:
-            return 'минус ' + self._number_to_words(-n, feminine)
-
-        result = []
-
-        # Billions
-        if n >= 1000000000:
-            billions = n // 1000000000
-            n %= 1000000000
-            result.append(self._number_to_words(billions, False))
-            if billions % 10 == 1 and billions % 100 != 11:
-                result.append('миллиард')
-            elif 2 <= billions % 10 <= 4 and not (12 <= billions % 100 <= 14):
-                result.append('миллиарда')
-            else:
-                result.append('миллиардов')
-
-        # Millions
-        if n >= 1000000:
-            millions = n // 1000000
-            n %= 1000000
-            result.append(self._number_to_words(millions, False))
-            if millions % 10 == 1 and millions % 100 != 11:
-                result.append('миллион')
-            elif 2 <= millions % 10 <= 4 and not (12 <= millions % 100 <= 14):
-                result.append('миллиона')
-            else:
-                result.append('миллионов')
-
-        # Thousands (feminine in Russian)
-        if n >= 1000:
-            thousands = n // 1000
-            n %= 1000
-            result.append(self._number_to_words(thousands, True))
-            if thousands % 10 == 1 and thousands % 100 != 11:
-                result.append('тысяча')
-            elif 2 <= thousands % 10 <= 4 and not (12 <= thousands % 100 <= 14):
-                result.append('тысячи')
-            else:
-                result.append('тысяч')
-
-        # Hundreds
-        if n >= 100:
-            result.append(self.hundreds[n // 100])
-            n %= 100
-
-        # Tens and units
-        if n >= 20:
-            result.append(self.tens[n // 10])
-            n %= 10
-        elif n >= 10:
-            result.append(self.teens[n - 10])
-            n = 0
-
-        if n > 0:
-            if feminine:
-                result.append(self.units_fem[n])
-            else:
-                result.append(self.units[n])
-
-        return ' '.join(filter(None, result))
-
-    def _transform_cardinal(self, token: str) -> str:
-        """Transform a cardinal number."""
-        # Extract digits
-        digits = re.sub(r'[^\d]', '', token)
-        if not digits:
-            return token
-
-        try:
-            num = int(digits)
-            return self._number_to_words(num)
-        except:
-            return token
-
-    def _spell_out_digits(self, token: str) -> str:
-        """Spell out each digit individually."""
-        digit_words = ['ноль', 'один', 'два', 'три', 'четыре',
-                       'пять', 'шесть', 'семь', 'восемь', 'девять']
-        result = []
-        for char in token:
-            if char.isdigit():
-                result.append(digit_words[int(char)])
-            else:
-                result.append(char)
-        return ' '.join(result)
-
-    def _transliterate(self, token: str) -> str:
-        """Transliterate Latin characters to Russian _trans format."""
-        # Simple transliteration mapping
-        trans_map = {
-            'a': 'а', 'b': 'б', 'c': 'к', 'd': 'д', 'e': 'е', 'f': 'ф',
-            'g': 'г', 'h': 'х', 'i': 'и', 'j': 'дж', 'k': 'к', 'l': 'л',
-            'm': 'м', 'n': 'н', 'o': 'о', 'p': 'п', 'q': 'к', 'r': 'р',
-            's': 'с', 't': 'т', 'u': 'у', 'v': 'в', 'w': 'в', 'x': 'кс',
-            'y': 'и', 'z': 'з'
-        }
-
-        result = []
-        for char in token.lower():
-            if char in trans_map:
-                result.append(trans_map[char] + '_trans')
-            elif char == '.':
-                result.append('точка')
-            elif char == '-':
-                result.append('дефис')
-            elif char.isdigit():
-                result.append(self._number_to_words(int(char)))
-            else:
-                result.append(char)
-
-        return ' '.join(result)
-
-    def predict_single(self, token: str, prev_token: str = '<START>', next_token: str = '<END>') -> str:
-        """Predict the normalized form of a single token."""
-        if not token or pd.isna(token):
-            return ''
-
-        token = str(token)
-
-        # Try context-aware lookup first
-        context_key = (prev_token, token, next_token)
-        if context_key in self.before_to_after_by_context:
-            return self.before_to_after_by_context[context_key][0]
-
-        # Try direct lookup
-        if token in self.before_to_after:
-            return self.before_to_after[token]
-
-        # Fallback: classify and apply rules
-        token_class = self._classify_token(token)
-
-        if token_class == 'PUNCT':
-            return token
-
-        if token_class == 'PLAIN':
-            return token
-
-        if token_class == 'CARDINAL':
-            return self._transform_cardinal(token)
-
-        if token_class == 'ELECTRONIC':
-            return self._transliterate(token)
-
-        # Default: return as-is
-        return token
-
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """Predict normalized forms for all tokens."""
-        # Sort by sentence_id and token_id
-        X_sorted = X.sort_values(['sentence_id', 'token_id']).reset_index(drop=True)
-
-        # Add context columns
-        X_sorted['prev_before'] = X_sorted.groupby('sentence_id')['before'].shift(1).fillna('<START>')
-        X_sorted['next_before'] = X_sorted.groupby('sentence_id')['before'].shift(-1).fillna('<END>')
-
-        # Predict
-        predictions = []
-        for _, row in X_sorted.iterrows():
-            pred = self.predict_single(
-                row['before'],
-                row['prev_before'],
-                row['next_before']
-            )
-            predictions.append(pred)
-
-        # Restore original order
-        X_sorted['prediction'] = predictions
-        X_sorted = X_sorted.sort_index()
-
-        return X_sorted['prediction'].values
-
-
-def train_lookup_normalizer(
-    X_train: DT,
-    y_train: DT,
-    X_val: DT,
-    y_val: DT,
-    X_test: DT,
-    **hyper_params: Any
-) -> Tuple[DT, DT]:
-    """
-    Trains a lookup-based text normalizer and returns predictions.
+    print("Starting Training: XGBoost Phonetic-Aware Engine")
     
-    This approach is optimal for text normalization because:
-    1. Most transformations are deterministic
-    2. Exact string match is required
-    3. Large training data provides comprehensive coverage
+    # 1. Prepare Data for XGBoost
+    drop_cols = ['sentence_id', 'token_id']
+    train_feats = X_train.drop(columns=drop_cols)
+    val_feats = X_val.drop(columns=drop_cols)
+    test_feats = X_test.drop(columns=drop_cols)
     
-    Args:
-        X_train: Training features with 'before', 'sentence_id', 'token_id' columns
-        y_train: Training labels (normalized text)
-        X_val: Validation features
-        y_val: Validation labels
-        X_test: Test features
-        **hyper_params: Additional parameters (unused)
+    num_classes = int(y_train.max() + 1)
     
-    Returns:
-        Tuple of (validation_predictions, test_predictions)
-    """
-    print("Training lookup-based text normalizer...")
+    # XGBoost Parameters optimized for GPU
+    xgb_params = {
+        'objective': 'multi:softmax',
+        'num_class': num_classes,
+        'tree_method': 'hist',
+        'device': 'cuda',
+        'n_estimators': 600,
+        'learning_rate': 0.08,
+        'max_depth': 8,
+        'subsample': 0.85,
+        'colsample_bytree': 0.85,
+        'random_state': 42,
+        'verbosity': 1,
+        'n_jobs': 36,
+        'early_stopping_rounds': 25
+    }
 
-    # Convert to DataFrames if needed
-    if isinstance(X_train, np.ndarray):
-        X_train = pd.DataFrame(X_train)
-    if isinstance(X_val, np.ndarray):
-        X_val = pd.DataFrame(X_val)
-    if isinstance(X_test, np.ndarray):
-        X_test = pd.DataFrame(X_test)
-    if isinstance(y_train, np.ndarray):
-        y_train = pd.Series(y_train)
+    print(f"Training XGBoost on {train_feats.shape[0]} tokens...")
+    model = xgb.XGBClassifier(**xgb_params)
+    
+    model.fit(
+        train_feats, 
+        y_train,
+        eval_set=[(val_feats, y_val)],
+        verbose=100
+    )
 
-    # Initialize and fit normalizer
-    normalizer = RussianTextNormalizer()
-    normalizer.fit(X_train, y_train)
+    print("Generating class predictions...")
+    val_class_preds = model.predict(val_feats)
+    test_class_preds = model.predict(test_feats)
 
-    # Predict on validation set
-    print("Predicting on validation set...")
-    val_predictions = normalizer.predict(X_val)
+    # 2. Load Metadata and Dictionaries
+    print("Loading normalization metadata...")
+    class_mapping = pd.read_parquet(os.path.join(OUTPUT_DATA_PATH, "class_mapping.parquet"))
+    id_to_class = class_mapping.set_index('class_id')['class_name'].to_dict()
+    
+    class_tag_dict = pd.read_parquet(os.path.join(OUTPUT_DATA_PATH, "class_tag_dict.parquet"))
+    class_tag_lookup = class_tag_dict.set_index(['class', 'before'])['after'].to_dict()
+    
+    global_dict = pd.read_parquet(os.path.join(OUTPUT_DATA_PATH, "global_dict.parquet"))
+    global_lookup = global_dict.set_index('before')['after'].to_dict()
 
-    # Calculate validation accuracy
-    if y_val is not None:
-        y_val_arr = y_val.values if isinstance(y_val, pd.Series) else y_val
-        accuracy = np.mean(val_predictions == y_val_arr)
-        print(f"Validation accuracy: {accuracy:.4f}")
+    # 3. Reload original 'before' strings
+    print("Extracting original strings for rule-based engine...")
+    train_csv = os.path.join(BASE_DATA_PATH, "prepared_optimized", "ru_train.csv")
+    test_csv = os.path.join(BASE_DATA_PATH, "prepared_optimized", "ru_test_2.csv")
+    
+    # Use pandas for high-concurrency string manipulation
+    train_before = cudf.read_csv(train_csv, usecols=['before'], dtype={'before': 'string'})['before']
+    test_before = cudf.read_csv(test_csv, usecols=['before'], dtype={'before': 'string'})['before']
+    
+    val_strings = train_before.iloc[X_val.index].to_pandas().values
+    test_strings = test_before.to_pandas().values
 
-    # Predict on test set
-    print("Predicting on test set...")
-    test_predictions = normalizer.predict(X_test)
+    # 4. Russian Phonetic & Grammatical Engine
 
-    # Ensure no NaN values
-    val_predictions = np.array([p if p and not pd.isna(p) else '' for p in val_predictions])
-    test_predictions = np.array([p if p and not pd.isna(p) else '' for p in test_predictions])
+    def get_plural(n: int, forms: list) -> str:
+        n = abs(int(n))
+        if n % 10 == 1 and n % 100 != 11: return forms[0]
+        elif 2 <= n % 10 <= 4 and (n % 100 < 10 or n % 100 >= 20): return forms[1]
+        else: return forms[2]
 
-    # Verify output requirements
-    assert len(val_predictions) == len(X_val), f"Val prediction length mismatch: {len(val_predictions)} vs {len(X_val)}"
-    assert len(test_predictions) == len(
-        X_test), f"Test prediction length mismatch: {len(test_predictions)} vs {len(X_test)}"
+    def get_plural_adj(n: int, forms: list) -> str:
+        n = abs(int(n))
+        if n % 10 == 1 and n % 100 != 11: return forms[0]
+        return forms[1]
 
-    print(f"Predictions complete: {len(val_predictions)} val, {len(test_predictions)} test")
+    numbers_nom = {
+        0: 'ноль', 1: 'один', 2: 'два', 3: 'три', 4: 'четыре', 5: 'пять', 6: 'шесть', 7: 'семь', 8: 'восемь', 9: 'девять',
+        10: 'десять', 11: 'одиннадцать', 12: 'двенадцать', 13: 'тринадцать', 14: 'четырнадцать', 15: 'пятнадцать', 16: 'шестнадцать', 17: 'семнадцать', 18: 'восемнадцать', 19: 'девятнадцать',
+        20: 'двадцать', 30: 'тридцать', 40: 'сорок', 50: 'пятьдесят', 60: 'шестьдесят', 70: 'семьдесят', 80: 'восемьдесят', 90: 'девяносто',
+        100: 'сто', 200: 'двести', 300: 'триста', 400: 'четыреста', 500: 'пятьсот', 600: 'шестьсот', 700: 'семьсот', 800: 'восемьсот', 900: 'девятьсот'
+    }
 
-    return val_predictions, test_predictions
+    numbers_gen = {k: v.replace('ь', 'и').replace('я', 'и') if k >= 5 and k <= 30 else v for k, v in numbers_nom.items()}
+    numbers_gen.update({1: 'одного', 2: 'двух', 3: 'трех', 4: 'четырех', 40: 'сорока', 90: 'девяноста', 100: 'ста'})
 
+    ordinals_gen = {
+        1: 'первого', 2: 'второго', 3: 'третьего', 4: 'четвертого', 5: 'пятого', 6: 'шестого', 7: 'седьмого', 8: 'восьмого', 9: 'девятого',
+        10: 'десятого', 11: 'одиннадцатого', 12: 'двенадцатого', 13: 'тринадцатого', 14: 'четырнадцатого', 15: 'пятнадцатого', 16: 'шестнадцатого', 17: 'семнадцатого', 18: 'восемнадцатого', 19: 'девятнадцатого',
+        20: 'двадцатого', 30: 'тридцатого', 40: 'сорокового', 50: 'пятидесятого', 60: 'шестидесятого', 70: 'семидесятого', 80: 'восьмидесятого', 90: 'девяностого', 100: 'сотого'
+    }
+
+    def num_to_ru(n, gender='m', ordinal=False, case='nom'):
+        if n == 0: return 'ноль' if not ordinal else 'нулевого'
+        parts = []
+        rem = n
+        if rem >= 1000:
+            th = rem // 1000
+            parts.append(num_to_ru(th, gender='f', case=case))
+            parts.append(get_plural(th, ['тысяча', 'тысячи', 'тысяч']))
+            rem %= 1000
+        if rem >= 100:
+            h = (rem // 100) * 100
+            parts.append(numbers_nom[h])
+            rem %= 100
+        if rem > 0:
+            if ordinal:
+                if rem in ordinals_gen: parts.append(ordinals_gen[rem])
+                else: 
+                    parts.append(numbers_nom[(rem // 10) * 10])
+                    parts.append(ordinals_gen[rem % 10])
+            else:
+                if rem in numbers_nom:
+                    word = numbers_nom[rem]
+                    if rem == 1: word = {'m': 'один', 'f': 'одна', 'n': 'одно'}[gender]
+                    elif rem == 2: word = {'m': 'два', 'f': 'две', 'n': 'два'}[gender]
+                    parts.append(word)
+                else:
+                    parts.append(numbers_nom[(rem // 10) * 10])
+                    o = rem % 10
+                    word = numbers_nom[o]
+                    if o == 1: word = {'m': 'один', 'f': 'одна', 'n': 'одно'}[gender]
+                    elif o == 2: word = {'m': 'два', 'f': 'две', 'n': 'два'}[gender]
+                    parts.append(word)
+        return " ".join(parts)
+
+    def transliterate(text):
+        clusters = {'sh': 'ш', 'ch': 'ч', 'th': 'т', 'ph': 'ф', 'kh': 'х', 'zh': 'ж', 'oo': 'у', 'ee': 'и'}
+        mapping = {'a': 'а', 'b': 'б', 'c': 'к', 'd': 'д', 'e': 'е', 'f': 'ф', 'g': 'г', 'h': 'х', 'i': 'и', 'j': 'й', 'k': 'к', 'l': 'л', 'm': 'м', 'n': 'н', 'o': 'о', 'p': 'п', 'q': 'к', 'r': 'р', 's': 'с', 't': 'т', 'u': 'у', 'v': 'в', 'w': 'в', 'x': 'кс', 'y': 'и', 'z': 'з'}
+        text = text.lower()
+        res = []
+        i = 0
+        while i < len(text):
+            found = False
+            if i + 1 < len(text) and text[i:i+2] in clusters:
+                cyr = clusters[text[i:i+2]]
+                for c in cyr: res.append(c + "_trans")
+                i += 2
+                found = True
+            if not found:
+                char = text[i]
+                if char in mapping:
+                    cyr = mapping[char]
+                    for c in cyr: res.append(c + "_trans")
+                else: res.append(char)
+                i += 1
+        return " ".join(res)
+
+    def transform_token(before, class_name):
+        b = str(before)
+        if b == '<PAD>': return 'sil'
+        
+        # Dictionary Overrides
+        if (class_name, b) in class_tag_lookup: return class_tag_lookup[(class_name, b)]
+        if b in global_lookup: return global_lookup[b]
+        
+        if class_name == 'PUNCT': return b
+        
+        if class_name in ['CARDINAL', 'DIGIT']:
+            if b.isdigit(): return num_to_ru(int(b))
+            
+        if class_name == 'DECIMAL':
+            if '.' in b or ',' in b:
+                parts = b.replace(',', '.').split('.')
+                if len(parts) == 2:
+                    int_val, frac_str = int(parts[0]), parts[1]
+                    int_word = num_to_ru(int_val, gender='f')
+                    int_unit = get_plural_adj(int_val, ['целая', 'целых'])
+                    frac_val = int(frac_str)
+                    frac_word = num_to_ru(frac_val, gender='f')
+                    scale = {1: ['десятая', 'десятых'], 2: ['сотая', 'сотых'], 3: ['тысячная', 'тысячных']}.get(len(frac_str), ['десятитысячная', 'десятитысячных'])
+                    frac_unit = get_plural_adj(frac_val, scale)
+                    return f"{int_word} {int_unit} {frac_word} {frac_unit}"
+
+        if class_name == 'TIME':
+            match = re.match(r'(\d{1,2})[:.](\d{2})', b)
+            if match:
+                h, m = int(match.group(1)), int(match.group(2))
+                h_str = f"{num_to_ru(h, gender='m')} {get_plural(h, ['час', 'часа', 'часов'])}"
+                m_str = f"{num_to_ru(m, gender='f')} {get_plural(m, ['минута', 'минуты', 'минут'])}"
+                return f"{h_str} {m_str}"
+
+        if class_name == 'VERBATIM':
+            symbols = {'%': 'процент', '&': 'и', '$': 'доллар', '№': 'номер', '+': 'плюс', '-': 'минус', '*': 'умножить'}
+            return symbols.get(b, b)
+
+        if class_name in ['LETTERS', 'ELECTRONIC', 'PLAIN']:
+            if re.search(r'[a-zA-Z]', b): return transliterate(b)
+
+        return b
+
+    print("Applying linguistic transformation...")
+    val_final = [transform_token(b, id_to_class[c]) for b, c in zip(val_strings, val_class_preds)]
+    test_final = [transform_token(b, id_to_class[c]) for b, c in zip(test_strings, test_class_preds)]
+
+    val_preds_series = pd.Series(val_final, index=X_val.index.to_numpy())
+    test_preds_series = pd.Series(test_final)
+
+    print(f"Validation Class Accuracy: {np.mean(val_class_preds == y_val.to_numpy()):.4f}")
+    return val_preds_series, test_preds_series
 
 # ===== Model Registry =====
-PREDICTION_ENGINES: Dict[str, PredictionFunction] = {
-    "lookup_normalizer": train_lookup_normalizer,
+PREDICTION_ENGINES: Dict[str, ModelFn] = {
+    "phonetic_xgb_engine": train_phonetic_xgb_engine,
 }

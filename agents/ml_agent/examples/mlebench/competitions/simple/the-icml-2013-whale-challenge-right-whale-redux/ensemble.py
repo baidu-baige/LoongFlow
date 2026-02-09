@@ -1,83 +1,78 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-import os
-from typing import Dict, List
-
+from typing import Dict, List, Any
 import numpy as np
-import pandas as pd
+from scipy.stats import rankdata
+from sklearn.metrics import roc_auc_score
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/the-icml-2013-whale-challenge-right-whale-redux/prepared/public"
-OUTPUT_DATA_PATH = "output/5872ea81-cdbf-4bc6-8da8-7d0e82d40021/2/executor/output"
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-01/evolux/output/mlebench/the-icml-2013-whale-challenge-right-whale-redux/prepared/public"
+OUTPUT_DATA_PATH = "output/6795de84-a7ab-443d-bbf5-03771db15966/1/executor/output"
 
-# Type Hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-
+# Task-adaptive type definitions
+y = np.ndarray           # Target vector: [N] int64
+Predictions = np.ndarray # Model predictions: [N] float32
 
 def ensemble(
-    all_oof_preds: Dict[str, DT],
-    all_test_preds: Dict[str, List[DT]],
-    y_true_full: DT
-) -> DT:
+    all_val_preds: Dict[str, Predictions],
+    all_test_preds: Dict[str, Predictions],
+    y_val: y,
+) -> Predictions:
     """
-    Ensembles predictions from multiple models using a weighted average.
+    Combines predictions from multiple models using rank averaging to maximize AUC.
+    Rank averaging is particularly robust for imbalanced datasets and rank-based metrics like AUC.
+
+    Args:
+        all_val_preds (Dict[str, Predictions]): Dictionary mapping model names to OOF predictions.
+        all_test_preds (Dict[str, Predictions]): Dictionary mapping model names to test predictions.
+        y_val (y): Ground truth targets.
+
+    Returns:
+        Predictions: Final test set predictions (rank-averaged scores).
     """
-    # Step 1: Aggregate fold predictions for each model (Mean across folds)
-    model_means = {}
-    for model_name, fold_preds in all_test_preds.items():
-        # Ensure each fold prediction is converted to a flat numpy array for consistent averaging
-        fold_arrays = [np.array(p).flatten() for p in fold_preds]
-        model_means[model_name] = np.mean(fold_arrays, axis=0)
+    print(f"Starting ensemble stage. Models provided: {list(all_test_preds.keys())}")
 
-    if not model_means:
-        raise ValueError("No model predictions available for ensembling.")
+    if not all_test_preds:
+        raise ValueError("The 'all_test_preds' dictionary is empty. No predictions to ensemble.")
 
-    # Step 2: Identify model architectures (EfficientNet-B0 and ResNet18)
-    eff_keys = [k for k in model_means.keys() if 'efficientnet' in k.lower()]
-    res_keys = [k for k in model_means.keys() if 'resnet' in k.lower()]
+    # Step 1: Evaluate individual model performance
+    # This provides visibility into which models/folds are performing best.
+    for model_name, val_p in all_val_preds.items():
+        try:
+            if len(val_p) == len(y_val):
+                auc = roc_auc_score(y_val, val_p)
+                print(f"Model [{model_name}] Out-of-Fold AUC: {auc:.5f}")
+            else:
+                # If y_val doesn't match the OOF size (e.g., if it's only one fold), log and skip.
+                print(f"Model [{model_name}] AUC skip: y_val size {len(y_val)} != OOF size {len(val_p)}")
+        except Exception as e:
+            print(f"Model [{model_name}] AUC evaluation failed: {e}")
 
-    # Extract architecture-specific means
-    eff_mean = np.mean([model_means[k] for k in eff_keys], axis=0) if eff_keys else None
-    res_mean = np.mean([model_means[k] for k in res_keys], axis=0) if res_keys else None
+    # Step 2: Apply Rank-based Aggregation
+    # Strategy: Convert each model's predictions into ranks, then average those ranks.
+    # This prevents models with different probability calibrations from dominating the ensemble.
+    print(f"Applying Rank Averaging on {len(all_test_preds)} models...")
+    
+    all_percentiles = []
+    # Sort keys for deterministic behavior
+    model_keys = sorted(all_test_preds.keys())
+    
+    for name in model_keys:
+        t_preds = all_test_preds[name]
+        
+        # Calculate ranks using scipy.stats.rankdata with 'average' tie-breaking as specified.
+        # This converts raw probabilities into a ranking from 1 to N.
+        ranks = rankdata(t_preds, method='average')
+        
+        # Normalize to percentile range (0, 1] to ensure all models have equitable weight
+        # regardless of the number of samples or tie distribution.
+        percentiles = ranks / float(len(t_preds))
+        all_percentiles.append(percentiles)
+    
+    # Simple mean of the percentile ranks
+    final_test_scores = np.mean(all_percentiles, axis=0)
 
-    # Step 3: Apply weighted average as specified (0.6 Eff + 0.4 Res)
-    if eff_mean is not None and res_mean is not None:
-        final_preds = 0.6 * eff_mean + 0.4 * res_mean
-    elif eff_mean is not None:
-        final_preds = eff_mean
-    elif res_mean is not None:
-        final_preds = res_mean
-    else:
-        # Fallback: simple average of all available models
-        final_preds = np.mean(list(model_means.values()), axis=0)
+    # Step 3: Final validation
+    if not np.isfinite(final_test_scores).all():
+        raise RuntimeError("Ensemble generated non-finite values (NaN or Infinity).")
 
-    # Step 4: Post-processing (Handle Logits and ensure [0, 1] range)
-    def ensure_probabilities(p):
-        # If values are significantly outside [0, 1], apply sigmoid
-        if np.min(p) < -0.01 or np.max(p) > 1.01:
-            p = 1 / (1 + np.exp(-p))
-        # Handle numerical precision issues and NaNs
-        return np.nan_to_num(np.clip(p, 0, 1), nan=0.0, posinf=1.0, neginf=0.0)
-
-    final_preds = ensure_probabilities(final_preds)
-
-    # Step 5: Create submission.csv with clip and probability columns
-    try:
-        sample_sub_path = os.path.join(BASE_DATA_PATH, "sampleSubmission.csv")
-        if os.path.exists(sample_sub_path):
-            sample_sub = pd.read_csv(sample_sub_path)
-            if len(sample_sub) == len(final_preds):
-                submission = pd.DataFrame({
-                    'clip': sample_sub['clip'],
-                    'probability': final_preds
-                })
-                os.makedirs(OUTPUT_DATA_PATH, exist_ok=True)
-                submission.to_csv(os.path.join(OUTPUT_DATA_PATH, "submission.csv"), index=False)
-    except Exception as e:
-        # Propagation of errors as per requirements
-        raise RuntimeError(f"Failed to create submission.csv: {e}")
-
-    # Step 6: Return final test predictions
-    return final_preds
+    print(f"Ensemble completed. Output length: {len(final_test_scores)}")
+    
+    return final_test_scores.astype(np.float32)

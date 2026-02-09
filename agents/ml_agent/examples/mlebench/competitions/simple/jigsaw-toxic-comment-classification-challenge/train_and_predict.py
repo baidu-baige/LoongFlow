@@ -1,185 +1,192 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-from typing import Callable, Dict, Tuple
-
-import numpy as np
-import pandas as pd
+import os
 import torch
 import torch.nn as nn
-from sklearn.metrics import roc_auc_score
-from torch.optim import AdamW
-from torch.utils.data import DataLoader, Dataset
-from transformers import BertForSequenceClassification, get_linear_schedule_with_warmup
+import numpy as np
+import pandas as pd
+from torch.utils.data import Dataset, DataLoader, DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed import init_process_group, destroy_process_group
+import torch.multiprocessing as mp
+from transformers import AutoModelForSequenceClassification, AdamW, get_linear_schedule_with_warmup
+from typing import Tuple, Any, Dict, Callable
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/jigsaw-toxic-comment-classification-challenge/prepared/public"
-OUTPUT_DATA_PATH = "output/40d01db3-cd9d-46e2-8d9c-d192fb8addff/1/executor/output"
+# Use the same base paths as defined in the pipeline
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-03/evolux/output/mlebench/jigsaw-toxic-comment-classification-challenge/prepared/public"
+OUTPUT_DATA_PATH = "output/4d08636e-bf37-40e0-b9d7-8ffb77d57ea2/1/executor/output"
 
-# Type hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-PredictionFunction = Callable[[DT, DT, DT, DT, DT], Tuple[DT, DT]]
+# Task-adaptive type definitions
+X = Any           # ModelInputs (dict-like containing 'input_ids' and 'attention_mask')
+y = np.ndarray    # Multi-label binary targets
+Predictions = np.ndarray
 
+# Model Function Type
+ModelFn = Callable[
+    [X, y, X, y, X],
+    Tuple[Predictions, Predictions]
+]
 
-# ===== Training Functions =====
+class ToxicDataset(Dataset):
+    def __init__(self, inputs: Dict[str, np.ndarray], labels: np.ndarray = None):
+        self.input_ids = torch.tensor(inputs['input_ids'], dtype=torch.long)
+        self.attention_mask = torch.tensor(inputs['attention_mask'], dtype=torch.long)
+        self.labels = torch.tensor(labels, dtype=torch.float32) if labels is not None else None
 
-def train_bert_transformer(
-    X_train: DT,
-    y_train: DT,
-    X_val: DT,
-    y_val: DT,
-    X_test: DT
-) -> Tuple[DT, DT]:
-    """
-    Trains a BERT-base-uncased model for multi-label toxicity classification.
-    Optimizes Mean ROC AUC across 6 target categories.
-    """
-    # Step 1: Configuration and Hardware Setup
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __len__(self):
+        return len(self.input_ids)
 
+    def __getitem__(self, idx):
+        item = {
+            'input_ids': self.input_ids[idx],
+            'attention_mask': self.attention_mask[idx]
+        }
+        if self.labels is not None:
+            item['labels'] = self.labels[idx]
+        return item
+
+def ddp_setup(rank: int, world_size: int):
+    """Initializes the distributed process group."""
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+    init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
+
+def train_worker(
+    rank: int, 
+    world_size: int, 
+    X_train: X, 
+    y_train: y, 
+    X_val: X, 
+    y_val: y, 
+    X_test: X, 
+    shared_results: Dict
+):
+    """Worker function for DDP training."""
+    ddp_setup(rank, world_size)
+    
     # Hyperparameters
-    MAX_LEN = 256
-    BATCH_SIZE = 32
-    EPOCHS = 3
-    LR = 2e-5
-    WEIGHT_DECAY = 0.01
+    model_name = "microsoft/deberta-v3-base"
+    batch_size = 16 # per GPU, total 32
+    epochs = 3
+    lr = 2e-5
+    weight_decay = 0.01
 
-    # Dataset Class for PyTorch
-    class JigsawDataset(Dataset):
-        def __init__(self, ids, masks, labels=None):
-            self.ids = ids
-            self.masks = masks
-            self.labels = labels
+    # Data Preparation
+    train_dataset = ToxicDataset(X_train, y_train)
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=batch_size, 
+        sampler=DistributedSampler(train_dataset),
+        num_workers=4,
+        pin_memory=True
+    )
 
-        def __len__(self):
-            return len(self.ids)
+    # Model Initialization
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_name, 
+        num_labels=6
+    ).to(rank)
+    model = DDP(model, device_ids=[rank])
 
-        def __getitem__(self, idx):
-            item = {
-                'input_ids': torch.tensor(self.ids[idx], dtype=torch.long),
-                'attention_mask': torch.tensor(self.masks[idx], dtype=torch.long)
-            }
-            if self.labels is not None:
-                item['labels'] = torch.tensor(self.labels[idx], dtype=torch.float)
-            return item
+    # Optimizer and Scheduler
+    optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    num_training_steps = len(train_loader) * epochs
+    num_warmup_steps = int(0.1 * num_training_steps)
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer, 
+        num_warmup_steps=num_warmup_steps, 
+        num_training_steps=num_training_steps
+    )
 
-    def get_data_arrays(df):
-        # Extract input_ids and attention_mask from the feature engineered DataFrame
-        # create_features stacked them horizontally: [ids...][masks...]
-        vals = df.values
-        ids = vals[:, :MAX_LEN].astype(np.int64)
-        masks = vals[:, MAX_LEN:].astype(np.int64)
-        return ids, masks
-
-    # Ensure inputs are treated as DataFrames to extract arrays correctly
-    X_train_df = pd.DataFrame(X_train) if not isinstance(X_train, pd.DataFrame) else X_train
-    X_val_df = pd.DataFrame(X_val) if not isinstance(X_val, pd.DataFrame) else X_val
-    X_test_df = pd.DataFrame(X_test) if not isinstance(X_test, pd.DataFrame) else X_test
-    y_train_df = pd.DataFrame(y_train) if not isinstance(y_train, pd.DataFrame) else y_train
-    y_val_df = pd.DataFrame(y_val) if not isinstance(y_val, pd.DataFrame) else y_val
-
-    # Step 2: Prepare DataLoaders
-    train_ids, train_masks = get_data_arrays(X_train_df)
-    val_ids, val_masks = get_data_arrays(X_val_df)
-    test_ids, test_masks = get_data_arrays(X_test_df)
-
-    train_dataset = JigsawDataset(train_ids, train_masks, y_train_df.values)
-    val_dataset = JigsawDataset(val_ids, val_masks, y_val_df.values)
-    test_dataset = JigsawDataset(test_ids, test_masks)
-
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
-
-    # Step 3: Build and Configure Model
-    # BERT-base-uncased with 6-unit linear head for multi-label classification
-    model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=6)
-    model.to(device)
-
-    # Optimizer from torch.optim as AdamW was moved/deprecated in transformers
-    optimizer = AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-    total_steps = len(train_loader) * EPOCHS
-    warmup_steps = int(0.1 * total_steps)
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps,
-                                                num_training_steps=total_steps)
-
-    # BCEWithLogitsLoss handles multi-label natively with logits
+    # Loss function (BCEWithLogitsLoss is standard for multi-label)
     criterion = nn.BCEWithLogitsLoss()
 
-    best_auc = 0.0
-    best_model_state = None
-
-    # Step 4: Training Loop
-    for epoch in range(EPOCHS):
-        model.train()
+    # Training Loop
+    print(f"[Rank {rank}] Starting training...")
+    model.train()
+    for epoch in range(epochs):
+        train_loader.sampler.set_epoch(epoch)
         for batch in train_loader:
             optimizer.zero_grad()
-            ids = batch['input_ids'].to(device)
-            masks = batch['attention_mask'].to(device)
-            targets = batch['labels'].to(device)
-
-            outputs = model(ids, attention_mask=masks)
-            logits = outputs.logits
-            loss = criterion(logits, targets)
-
+            
+            input_ids = batch['input_ids'].to(rank)
+            attention_mask = batch['attention_mask'].to(rank)
+            labels = batch['labels'].to(rank)
+            
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            loss = criterion(outputs.logits, labels)
+            
             loss.backward()
             optimizer.step()
             scheduler.step()
-
-        # Validation for Checkpointing based on Mean ROC AUC
+            
+    # Inference on Val and Test (Rank 0 handles this for simplicity and consistency)
+    if rank == 0:
+        print("[Rank 0] Starting inference...")
         model.eval()
-        val_epoch_preds = []
-        val_epoch_targets = []
-        with torch.no_grad():
-            for batch in val_loader:
-                ids = batch['input_ids'].to(device)
-                masks = batch['attention_mask'].to(device)
-                labels = batch['labels'].numpy()
+        
+        def predict(inputs_data):
+            dataset = ToxicDataset(inputs_data)
+            loader = DataLoader(dataset, batch_size=batch_size * 2, shuffle=False, num_workers=4)
+            preds_list = []
+            with torch.no_grad():
+                for batch in loader:
+                    input_ids = batch['input_ids'].to(rank)
+                    attention_mask = batch['attention_mask'].to(rank)
+                    logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
+                    probs = torch.sigmoid(logits).cpu().numpy()
+                    preds_list.append(probs)
+            return np.concatenate(preds_list, axis=0)
 
-                logits = model(ids, attention_mask=masks).logits
-                probs = torch.sigmoid(logits).cpu().numpy()
-                val_epoch_preds.append(probs)
-                val_epoch_targets.append(labels)
+        val_preds = predict(X_val)
+        test_preds = predict(X_test)
+        
+        shared_results['val_preds'] = val_preds
+        shared_results['test_preds'] = test_preds
 
-        val_epoch_preds = np.concatenate(val_epoch_preds, axis=0)
-        val_epoch_targets = np.concatenate(val_epoch_targets, axis=0)
+    destroy_process_group()
 
-        # Mean Column-wise ROC AUC
-        current_auc = roc_auc_score(val_epoch_targets, val_epoch_preds, average='macro')
+def train_deberta_v3(
+    X_train: X,
+    y_train: y,
+    X_val: X,
+    y_val: y,
+    X_test: X
+) -> Tuple[Predictions, Predictions]:
+    """
+    Trains DeBERTa-v3 using Distributed Data Parallel on available GPUs.
+    """
+    world_size = torch.cuda.device_count()
+    if world_size < 1:
+        raise RuntimeError("No GPU available for training.")
+    
+    print(f"Initializing DDP with {world_size} GPUs.")
+    
+    # Use a manager to retrieve results from the worker processes
+    manager = mp.Manager()
+    shared_results = manager.dict()
 
-        if current_auc > best_auc:
-            best_auc = current_auc
-            best_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+    # Spawn processes
+    mp.spawn(
+        train_worker,
+        args=(world_size, X_train, y_train, X_val, y_val, X_test, shared_results),
+        nprocs=world_size,
+        join=True
+    )
 
-    # Load Best Model Weights
-    if best_model_state:
-        model.load_state_dict(best_model_state)
+    if 'val_preds' not in shared_results or 'test_preds' not in shared_results:
+        raise RuntimeError("Training failed to produce predictions.")
 
-    # Step 5: Final Predictions on Validation and Test Sets
-    def predict_probs(loader):
-        model.eval()
-        all_probs = []
-        with torch.no_grad():
-            for batch in loader:
-                ids = batch['input_ids'].to(device)
-                masks = batch['attention_mask'].to(device)
-                logits = model(ids, attention_mask=masks).logits
-                probs = torch.sigmoid(logits).cpu().numpy()
-                all_probs.append(probs)
-        return np.concatenate(all_probs, axis=0)
+    val_preds = shared_results['val_preds']
+    test_preds = shared_results['test_preds']
 
-    val_final_preds = predict_probs(val_loader)
-    test_final_preds = predict_probs(test_loader)
+    # Final sanity checks
+    if np.isnan(val_preds).any() or np.isnan(test_preds).any():
+        raise ValueError("Predictions contain NaN values.")
 
-    # Format outputs as DataFrames to preserve index alignment and column names
-    val_predictions_df = pd.DataFrame(val_final_preds, index=X_val_df.index, columns=y_train_df.columns)
-    test_predictions_df = pd.DataFrame(test_final_preds, index=X_test_df.index, columns=y_train_df.columns)
-
-    return val_predictions_df, test_predictions_df
-
+    print("DeBERTa-v3 training and inference completed successfully.")
+    return val_preds, test_preds
 
 # ===== Model Registry =====
-PREDICTION_ENGINES: Dict[str, PredictionFunction] = {
-    "bert_transformer": train_bert_transformer,
+PREDICTION_ENGINES: Dict[str, ModelFn] = {
+    "deberta_v3": train_deberta_v3,
 }

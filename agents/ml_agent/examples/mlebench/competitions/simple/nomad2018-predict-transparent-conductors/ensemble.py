@@ -1,190 +1,92 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-import os
-from typing import Dict, List
-
 import numpy as np
 import pandas as pd
+from typing import Dict, Any
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/nomad2018-predict-transparent-conductors/prepared/public"
-OUTPUT_DATA_PATH = "output/2ea9a3e6-0185-40d8-bd93-7afe244a50a1/2/executor/output"
-
-# Type Hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-
+# Task-adaptive type definitions for NOMAD2018
+y = pd.DataFrame      # Ground truth targets for formation and bandgap energy
+Predictions = np.ndarray # Model predictions array of shape (n_samples, 2)
 
 def ensemble(
-    all_oof_preds: Dict[str, DT],
-    all_test_preds: Dict[str, List[DT]],
-    y_true_full: DT
-) -> DT:
+    all_val_preds: Dict[str, Predictions],
+    all_test_preds: Dict[str, Predictions],
+    y_val: y,
+) -> Predictions:
     """
-    Ensembles predictions from multiple models.
-
-    For this initial iteration, we focus on establishing a strong baseline
-    using simple averaging of available models (LightGBM and XGBoost).
+    Consolidates predictions from multiple models into a final output using a 
+    weighted average strategy optimized for the RMSLE metric.
     
-    The targets have been log1p transformed in create_features, so we need
-    to apply expm1 to convert predictions back to original scale.
-
-    Args:
-        all_oof_preds: Dictionary of {model_name: oof_predictions}.
-        all_test_preds: Dictionary of {model_name: [pred_fold_1, pred_fold_2, ...]}.
-        y_true_full: The Ground Truth labels (use for optimization/scoring).
-
-    Returns:
-        DT: Final predictions for the Test set.
+    Weights are determined based on the mean RMSLE performance across target 
+    columns on the validation set. Blending is performed in the log-transformed 
+    space to align with the metric's characteristics.
     """
+    print(f"Starting Ensemble Module (Stage 5): Processing {len(all_test_preds)} model outputs.")
 
-    # Helper function to compute RMSLE
-    def compute_rmsle(y_true, y_pred):
-        """Compute Root Mean Squared Logarithmic Error."""
-        # Ensure non-negative values
-        y_pred_clipped = np.maximum(y_pred, 0)
-        y_true_clipped = np.maximum(y_true, 0)
+    # 1. Align models present in both validation and test dictionaries
+    model_names = list(set(all_val_preds.keys()) & set(all_test_preds.keys()))
+    if not model_names:
+        raise KeyError("Ensemble Error: No common model names found between validation and test predictions.")
 
-        log_pred = np.log1p(y_pred_clipped)
-        log_true = np.log1p(y_true_clipped)
+    # 2. Prepare ground truth for metric calculation
+    # Ensure y_val is converted to a numpy array and clipped to non-negative
+    y_true = y_val.values if hasattr(y_val, 'values') else np.array(y_val)
+    log_true = np.log1p(np.maximum(0, y_true))
+    
+    # 3. Calculate weights based on individual model performance (Mean RMSLE)
+    weights = {}
+    for name in model_names:
+        val_pred = all_val_preds[name]
+        
+        # Log-transform predictions for RMSLE calculation
+        # Shape is (n_samples, 2) for formation_energy and bandgap_energy
+        log_pred = np.log1p(np.maximum(0, val_pred))
+        
+        # Calculate RMSLE for each column separately
+        # Evaluation: sqrt(mean((log(p+1) - log(a+1))^2))
+        squared_errors = np.square(log_true - log_pred)
+        rmsle_per_col = np.sqrt(np.mean(squared_errors, axis=0))
+        mean_rmsle = np.mean(rmsle_per_col)
+        
+        print(f"  Model Evaluation: '{name}' | Mean RMSLE: {mean_rmsle:.6f}")
+        print(f"    - formation_energy_ev_natom RMSLE: {rmsle_per_col[0]:.6f}")
+        print(f"    - bandgap_energy_ev RMSLE: {rmsle_per_col[1]:.6f}")
+        
+        # Use inverse of the error as the weight (higher performance -> higher weight)
+        # Small epsilon added for numerical stability
+        weights[name] = 1.0 / (mean_rmsle + 1e-12)
 
-        return np.sqrt(np.mean((log_pred - log_true) ** 2))
+    # 4. Normalize weights to sum to 1.0
+    total_weight_sum = sum(weights.values())
+    normalized_weights = {name: w / total_weight_sum for name, w in weights.items()}
+    
+    for name, w in normalized_weights.items():
+        print(f"  Calculated Weight for '{name}': {w:.4f}")
 
-    # Step 1: Aggregate fold predictions for each model
-    # Average predictions across folds for each model
-    aggregated_test_preds = {}
+    # 5. Apply weighted average in log-space
+    # This is equivalent to a weighted geometric mean in the (p+1) space,
+    # which is robust for skewed distributions and RMSLE objectives.
+    first_model_name = model_names[0]
+    n_test_samples = all_test_preds[first_model_name].shape[0]
+    n_targets = all_test_preds[first_model_name].shape[1]
+    
+    # Accumulate weighted log-predictions
+    final_log_test = np.zeros((n_test_samples, n_targets), dtype=np.float64)
+    
+    for name in model_names:
+        test_preds = all_test_preds[name]
+        # Align with log-space optimization
+        final_log_test += normalized_weights[name] * np.log1p(np.maximum(0, test_preds))
+        
+    # 6. Transform back to original feature space
+    # exp(log(p+1)) - 1 = p
+    final_predictions = np.expm1(final_log_test)
+    
+    # 7. Quality Assurance
+    if np.isnan(final_predictions).any() or np.isinf(final_predictions).any():
+        raise ValueError("Critical Error: Ensemble generated non-finite values (NaN/Inf).")
+        
+    if final_predictions.shape != all_test_preds[first_model_name].shape:
+        raise ValueError(f"Shape Mismatch: Ensemble output {final_predictions.shape} "
+                         f"does not match input test predictions {all_test_preds[first_model_name].shape}.")
 
-    for model_name, fold_preds_list in all_test_preds.items():
-        if len(fold_preds_list) == 0:
-            continue
-
-        # Stack all fold predictions and compute mean
-        stacked_preds = []
-        for fold_pred in fold_preds_list:
-            if isinstance(fold_pred, pd.DataFrame):
-                stacked_preds.append(fold_pred.values)
-            elif isinstance(fold_pred, pd.Series):
-                stacked_preds.append(fold_pred.values.reshape(-1, 1))
-            else:
-                arr = np.array(fold_pred)
-                if arr.ndim == 1:
-                    arr = arr.reshape(-1, 1)
-                stacked_preds.append(arr)
-
-        # Average across folds
-        stacked_array = np.stack(stacked_preds, axis=0)
-        mean_pred = np.mean(stacked_array, axis=0)
-        aggregated_test_preds[model_name] = mean_pred
-
-    # Step 2: Compute OOF scores for each model (for logging/future use)
-    # Convert y_true_full to numpy array
-    if isinstance(y_true_full, pd.DataFrame):
-        y_true_np = y_true_full.values
-        target_columns = y_true_full.columns.tolist()
-    elif isinstance(y_true_full, pd.Series):
-        y_true_np = y_true_full.values.reshape(-1, 1)
-        target_columns = ['target']
-    else:
-        y_true_np = np.array(y_true_full)
-        if y_true_np.ndim == 1:
-            y_true_np = y_true_np.reshape(-1, 1)
-        target_columns = ['formation_energy_ev_natom', 'bandgap_energy_ev']
-
-    # Note: y_true_full is in log1p space (transformed in create_features)
-    # OOF predictions are also in log1p space
-
-    model_scores = {}
-    for model_name, oof_pred in all_oof_preds.items():
-        if isinstance(oof_pred, pd.DataFrame):
-            oof_np = oof_pred.values
-        elif isinstance(oof_pred, pd.Series):
-            oof_np = oof_pred.values.reshape(-1, 1)
-        else:
-            oof_np = np.array(oof_pred)
-            if oof_np.ndim == 1:
-                oof_np = oof_np.reshape(-1, 1)
-
-        # Compute RMSE in log space (equivalent to RMSLE in original space)
-        # Since both are in log1p space, we compute RMSE directly
-        rmse_scores = []
-        for col_idx in range(oof_np.shape[1]):
-            rmse = np.sqrt(np.mean((oof_np[:, col_idx] - y_true_np[:, col_idx]) ** 2))
-            rmse_scores.append(rmse)
-
-        mean_rmse = np.mean(rmse_scores)
-        model_scores[model_name] = mean_rmse
-        print(f"Model {model_name} - Mean RMSE (log space): {mean_rmse:.6f}")
-        for col_idx, col_name in enumerate(target_columns[:oof_np.shape[1]]):
-            print(f"  {col_name}: {rmse_scores[col_idx]:.6f}")
-
-    # Step 3: Compute final ensemble
-    # For initial iteration, use simple averaging of all models
-
-    if len(aggregated_test_preds) == 0:
-        raise ValueError("No model predictions available for ensemble")
-
-    # Get the shape from the first model's predictions
-    first_model = list(aggregated_test_preds.keys())[0]
-    n_samples = aggregated_test_preds[first_model].shape[0]
-    n_targets = aggregated_test_preds[first_model].shape[1] if aggregated_test_preds[first_model].ndim > 1 else 1
-
-    # Simple average ensemble
-    ensemble_pred = np.zeros((n_samples, n_targets))
-
-    for model_name, pred in aggregated_test_preds.items():
-        if pred.ndim == 1:
-            pred = pred.reshape(-1, 1)
-        ensemble_pred += pred
-
-    ensemble_pred /= len(aggregated_test_preds)
-
-    # Transform predictions back from log1p space to original scale
-    # The targets were transformed using log1p in create_features
-    ensemble_pred_original = np.expm1(ensemble_pred)
-
-    # Ensure non-negative predictions (formation energy and bandgap should be >= 0)
-    ensemble_pred_original = np.maximum(ensemble_pred_original, 0)
-
-    # Handle any NaN or Infinity values
-    ensemble_pred_original = np.nan_to_num(ensemble_pred_original, nan=0.0, posinf=0.0, neginf=0.0)
-
-    # Convert to DataFrame with proper column names
-    if n_targets == 2:
-        columns = ['formation_energy_ev_natom', 'bandgap_energy_ev']
-    else:
-        columns = target_columns[:n_targets]
-
-    final_predictions = pd.DataFrame(ensemble_pred_original, columns=columns)
-
-    # Final validation - ensure no NaN or Infinity
-    final_predictions = final_predictions.replace([np.inf, -np.inf], np.nan)
-    final_predictions = final_predictions.fillna(final_predictions.mean())
-    final_predictions = final_predictions.fillna(0)
-
-    # Save OOF predictions and model scores for future iterations
-    os.makedirs(OUTPUT_DATA_PATH, exist_ok=True)
-
-    # Save model scores
-    scores_path = os.path.join(OUTPUT_DATA_PATH, "model_scores.csv")
-    scores_df = pd.DataFrame([
-        {"model": model_name, "mean_rmse_log_space": score}
-        for model_name, score in model_scores.items()
-    ])
-    scores_df.to_csv(scores_path, index=False)
-    print(f"\nModel scores saved to {scores_path}")
-
-    # Save OOF predictions for potential future ensemble optimization
-    for model_name, oof_pred in all_oof_preds.items():
-        oof_path = os.path.join(OUTPUT_DATA_PATH, f"oof_preds_{model_name}.csv")
-        if isinstance(oof_pred, pd.DataFrame):
-            oof_pred.to_csv(oof_path, index=False)
-        else:
-            pd.DataFrame(oof_pred).to_csv(oof_path, index=False)
-    print(f"OOF predictions saved to {OUTPUT_DATA_PATH}")
-
-    print(f"\nFinal ensemble predictions shape: {final_predictions.shape}")
-    print(f"Prediction statistics:")
-    print(final_predictions.describe())
-
+    print(f"Ensemble successfully generated final predictions for {n_test_samples} samples.")
     return final_predictions

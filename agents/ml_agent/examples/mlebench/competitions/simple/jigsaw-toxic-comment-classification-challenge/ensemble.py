@@ -1,72 +1,81 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-from typing import Dict, List
-
 import numpy as np
 import pandas as pd
+from typing import Dict, Any
+from sklearn.metrics import roc_auc_score
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/jigsaw-toxic-comment-classification-challenge/prepared/public"
-OUTPUT_DATA_PATH = "output/40d01db3-cd9d-46e2-8d9c-d192fb8addff/1/executor/output"
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-03/evolux/output/mlebench/jigsaw-toxic-comment-classification-challenge/prepared/public"
+OUTPUT_DATA_PATH = "output/4d08636e-bf37-40e0-b9d7-8ffb77d57ea2/1/executor/output"
 
-# Type Hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-
+# Task-adaptive type definitions
+y = np.ndarray           # Target vector type: Multi-label binary targets
+Predictions = np.ndarray # Model predictions type: Probabilities for 6 classes
 
 def ensemble(
-    all_oof_preds: Dict[str, DT],
-    all_test_preds: Dict[str, List[DT]],
-    y_true_full: DT
-) -> DT:
+    all_val_preds: Dict[str, Predictions],
+    all_test_preds: Dict[str, Predictions],
+    y_val: y,
+) -> Predictions:
     """
-    Ensembles predictions from multiple models using simple arithmetic mean.
+    Combines predictions from multiple folds/models using simple arithmetic averaging.
 
     Args:
-        all_oof_preds: Dictionary of {model_name: oof_predictions}.
-        all_test_preds: Dictionary of {model_name: [pred_fold_1, pred_fold_2, ...]}.
-        y_true_full: The Ground Truth labels.
+        all_val_preds (Dict[str, Predictions]): Dictionary mapping model/fold names to OOF predictions.
+        all_test_preds (Dict[str, Predictions]): Dictionary mapping model/fold names to test set predictions.
+        y_val (y): Ground truth targets for the validation set.
 
     Returns:
-        DT: Final averaged predictions for the Test set.
+        Predictions: Final averaged test set predictions of shape (test_size, 6).
     """
-    # Step 1: Collect all fold predictions from all models
-    all_preds_to_average = []
+    print(f"Starting ensemble process with {len(all_test_preds)} sets of predictions.")
 
-    for model_name, fold_preds_list in all_test_preds.items():
-        for pred in fold_preds_list:
-            # Ensure each prediction is a DataFrame to facilitate alignment and averaging
-            if isinstance(pred, np.ndarray):
-                # If it's a numpy array, we convert to DataFrame. 
-                # We assume the column order matches the target columns from y_true_full.
-                cols = y_true_full.columns if hasattr(y_true_full, 'columns') else None
-                pred_df = pd.DataFrame(pred, columns=cols)
-                all_preds_to_average.append(pred_df)
+    # Step 1: Evaluate individual model scores
+    # This helps monitor if any specific fold/model is performing poorly.
+    target_columns = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    
+    for name, val_preds in all_val_preds.items():
+        try:
+            # Calculate column-wise ROC AUC and then the mean
+            # Ensure indices match for metric calculation
+            if val_preds.shape == y_val.shape:
+                individual_aucs = []
+                for i in range(y_val.shape[1]):
+                    auc = roc_auc_score(y_val[:, i], val_preds[:, i])
+                    individual_aucs.append(auc)
+                
+                mean_auc = np.mean(individual_aucs)
+                print(f"Model/Fold '{name}' Validation Mean ROC AUC: {mean_auc:.6f}")
             else:
-                all_preds_to_average.append(pred)
+                print(f"Model/Fold '{name}' validation shape mismatch. Skipping OOF evaluation.")
+        except Exception as e:
+            print(f"Could not calculate score for {name}: {str(e)}")
 
-    if not all_preds_to_average:
-        raise ValueError("The all_test_preds dictionary is empty or contains no predictions.")
+    # Step 2: Apply ensemble strategy - Simple Arithmetic Mean
+    # The technical specification requires averaging across all folds/models.
+    test_preds_list = list(all_test_preds.values())
+    
+    if not test_preds_list:
+        raise ValueError("No test predictions found in all_test_preds.")
 
-    # Step 2: Apply ensemble strategy (Simple Arithmetic Mean)
-    # Concatenate all DataFrames and group by index to calculate mean
-    # This automatically handles multiple models and multiple folds per model.
-    ensemble_df = pd.concat(all_preds_to_average).groupby(level=0).mean()
+    # Stack and calculate mean across the first axis (the list axis)
+    # Using float64 for the intermediate summation to maintain precision
+    all_test_stacked = np.array(test_preds_list, dtype=np.float64)
+    final_test_preds = np.mean(all_test_stacked, axis=0).astype(np.float32)
 
-    # Step 3: Verification
-    # Ensure no NaNs or Infs are present in the final output
-    if ensemble_df.isnull().values.any():
-        raise ValueError("Ensemble output contains NaN values. Check input predictions for missing data.")
+    # Step 3: Sanity and Quality Checks
+    if np.isnan(final_test_preds).any():
+        raise ValueError("Ensemble result contains NaN values.")
+    
+    if np.isinf(final_test_preds).any():
+        raise ValueError("Ensemble result contains Infinity values.")
+    
+    # Ensure probabilities are clipped between 0 and 1
+    final_test_preds = np.clip(final_test_preds, 0.0, 1.0)
 
-    if np.isinf(ensemble_df.values).any():
-        raise ValueError(
-            "Ensemble output contains Infinity values. Check input predictions for numerical stability issues.")
+    # Validate output shape against the input predictions
+    expected_shape = test_preds_list[0].shape
+    if final_test_preds.shape != expected_shape:
+        raise ValueError(f"Shape mismatch: Expected {expected_shape}, got {final_test_preds.shape}")
 
-    # Ensure the columns match the required submission columns (order and names)
-    if hasattr(y_true_full, 'columns'):
-        target_cols = list(y_true_full.columns)
-        # Reorder columns just in case, while propagating errors if columns are missing
-        ensemble_df = ensemble_df[target_cols]
-
-    return ensemble_df
+    print(f"Ensemble completed successfully. Final prediction shape: {final_test_preds.shape}")
+    
+    return final_test_preds

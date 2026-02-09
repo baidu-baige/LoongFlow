@@ -1,101 +1,110 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-from typing import Dict, List
-
 import numpy as np
 import pandas as pd
+from sklearn.metrics import f1_score
+from typing import Dict, List, Any
+import gc
 
-BASE_DATA_PATH = "/root/workspace/evolux_ml/output/mlebench/plant-pathology-2021-fgvc8/prepared/public"
-OUTPUT_DATA_PATH = "output/1ae93cb9-976c-4242-a6ab-6fcbc92f5502/1/executor/output"
-
-# Type Hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-
+# Task-adaptive type definitions
+y = np.ndarray           # Binary matrix (N, 6)
+Predictions = np.ndarray # Final array of strings (N_test,)
 
 def ensemble(
-    all_oof_preds: Dict[str, DT],
-    all_test_preds: Dict[str, List[DT]],
-    y_true_full: DT
-) -> DT:
+    all_val_preds: Dict[str, np.ndarray],
+    all_test_preds: Dict[str, np.ndarray],
+    y_val: np.ndarray,
+) -> np.ndarray:
     """
-    Ensembles predictions from multiple models by averaging probabilities across folds and models,
-    applying a fixed threshold, and performing task-specific post-processing.
+    Combines predictions from multiple models using weighted averaging and class-specific 
+    threshold optimization to maximize the Mean F1-Score.
 
     Args:
-        all_oof_preds: Dictionary of {model_name: oof_predictions}.
-        all_test_preds: Dictionary of {model_name: [pred_fold_1, pred_fold_2, ...]}.
-        y_true_full: The Ground Truth labels (binarized).
+        all_val_preds (Dict[str, np.ndarray]): Probs from models on validation set.
+        all_test_preds (Dict[str, np.ndarray]): Probs from models on test set.
+        y_val (np.ndarray): Ground truth binary matrix for validation.
 
     Returns:
-        DT: Final predictions for the Test set in submission format (image, labels).
+        np.ndarray: Array of space-delimited label strings for each test image.
     """
-    if not all_test_preds:
-        raise ValueError("all_test_preds is empty. No predictions to ensemble.")
+    print("Initiating Ensemble Engine...")
+    
+    # Technical Specification: Target Classes (Order must match load_data)
+    target_classes = ['scab', 'healthy', 'frog_eye_leaf_spot', 'rust', 'complex', 'powdery_mildew']
+    num_classes = len(target_classes)
+    
+    # 1. Weighted Average Ensemble
+    # Specification: 0.5 (ConvNeXt-Large), 0.5 (Swin-Large)
+    # Note: If only one model is present in the dictionary, it takes full weight.
+    model_names = list(all_val_preds.keys())
+    if not model_names:
+        raise ValueError("Ensemble Error: No model predictions provided in all_val_preds.")
+    
+    print(f"Ensembling models: {model_names}")
+    
+    # Define weights based on specification
+    weights = {
+        'convnext_large': 0.5,
+        'swin_large': 0.5
+    }
+    
+    # Normalize weights for the models actually present
+    present_weights = np.array([weights.get(name, 1.0 / len(model_names)) for name in model_names])
+    present_weights /= present_weights.sum()
+    
+    def compute_weighted_average(preds_dict: Dict[str, np.ndarray], weight_arr: np.ndarray) -> np.ndarray:
+        avg_preds = None
+        for i, name in enumerate(model_names):
+            p = preds_dict[name]
+            if avg_preds is None:
+                avg_preds = p * weight_arr[i]
+            else:
+                avg_preds += p * weight_arr[i]
+        return avg_preds
 
-    # Step 1: Average fold predictions for each model
-    model_averages = []
-    for model_name, fold_preds in all_test_preds.items():
-        if not fold_preds:
-            continue
-        # Each fold_pred is a DataFrame with columns as disease classes and index as image IDs
-        # Concatenate along a new axis and take the mean
-        model_avg = pd.concat(fold_preds).groupby(level=0).mean()
-        model_averages.append(model_avg)
+    val_ensemble_probs = compute_weighted_average(all_val_preds, present_weights)
+    test_ensemble_probs = compute_weighted_average(all_test_preds, present_weights)
+    
+    # 2. Threshold Optimization
+    # We optimize thresholds for each class independently to maximize F1-Score on the validation set.
+    print("Optimizing class-wise thresholds on validation data...")
+    best_thresholds = np.full(num_classes, 0.5, dtype=np.float32)
+    
+    for i in range(num_classes):
+        best_f1 = -1.0
+        best_t = 0.5
+        # Search space for threshold optimization
+        for t in np.linspace(0.05, 0.95, 91):
+            current_f1 = f1_score(y_val[:, i], (val_ensemble_probs[:, i] > t).astype(int), zero_division=0)
+            if current_f1 > best_f1:
+                best_f1 = current_f1
+                best_t = t
+        best_thresholds[i] = best_t
+        print(f"Class '{target_classes[i]}' - Optimal Threshold: {best_t:.3f}, Max F1: {best_f1:.4f}")
 
-    if not model_averages:
-        raise ValueError("No valid model predictions found in all_test_preds.")
-
-    # Step 2: Average across different models
-    # final_probs is a DataFrame with the same columns and index as the input DataFrames
-    final_probs = pd.concat(model_averages).groupby(level=0).mean()
-
-    # Integrity check: Ensure no NaN or Infinity values
-    if final_probs.isna().any().any():
-        raise ValueError("Ensembled probabilities contain NaN values.")
-    if np.isinf(final_probs.values).any():
-        raise ValueError("Ensembled probabilities contain Infinity values.")
-
-    # Step 3: Thresholding (Fixed at 0.5 as per implementation guidance)
-    threshold = 0.5
-    binary_preds = (final_probs >= threshold).astype(int)
-
-    # Step 4: Post-processing
-    # Labels as defined in the training process
-    classes = ['scab', 'healthy', 'frog_eye_leaf_spot', 'rust', 'complex', 'powdery_mildew']
-
-    def format_labels(row):
-        # Extract active labels
-        active_labels = [cls for cls in classes if row[cls] == 1]
-
-        # Post-processing logic:
-        # 1. If no labels predicted, default to 'healthy'
-        if not active_labels:
-            return 'healthy'
-
-        # 2. If 'healthy' is predicted alongside other labels, prioritize the others
-        if 'healthy' in active_labels and len(active_labels) > 1:
-            active_labels.remove('healthy')
-
-        return " ".join(active_labels)
-
-    # Apply the logic row-wise to generate the space-delimited string
-    submission_labels = binary_preds.apply(format_labels, axis=1)
-
-    # Step 5: Construct final submission DataFrame
-    # The index of binary_preds contains the image filenames (image_path)
-    submission_df = pd.DataFrame({
-        'image': submission_labels.index,
-        'labels': submission_labels.values
-    })
-
-    # Final check: Output must have the same number of samples as test predictions
-    expected_len = len(next(iter(all_test_preds.values()))[0])
-    if len(submission_df) != expected_len:
-        # Note: If CV strategy or data loading changed indexing, this might be valid, 
-        # but in a standard pipeline, counts should match the sample submission.
-        pass
-
-    return submission_df
+    # 3. Apply Optimized Thresholds to Test Set
+    print("Applying thresholds and generating final labels...")
+    test_binary = (test_ensemble_probs > best_thresholds).astype(int)
+    
+    # Convert binary matrix to space-delimited string labels
+    final_labels = []
+    for row in test_binary:
+        labels = [target_classes[idx] for idx, val in enumerate(row) if val == 1]
+        
+        # Post-processing: If no labels are predicted, fall back to the highest probability class
+        if not labels:
+            highest_prob_idx = np.argmax(test_ensemble_probs[len(final_labels)])
+            labels = [target_classes[highest_prob_idx]]
+            
+        final_labels.append(" ".join(labels))
+    
+    # Resource Management
+    del val_ensemble_probs, test_ensemble_probs, test_binary
+    gc.collect()
+    
+    final_output = np.array(final_labels)
+    
+    # Validation of output constraints
+    num_test_samples = len(next(iter(all_test_preds.values())))
+    assert len(final_output) == num_test_samples, f"Alignment Error: Output size {len(final_output)} != Test size {num_test_samples}"
+    
+    print(f"Ensemble complete. Generated predictions for {len(final_output)} samples.")
+    return final_output

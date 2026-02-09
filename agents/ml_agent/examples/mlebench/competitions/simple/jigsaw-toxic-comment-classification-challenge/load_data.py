@@ -1,59 +1,80 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
+import pandas as pd
 import os
 from typing import Tuple
 
-import numpy as np
-import pandas as pd
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-03/evolux/output/mlebench/jigsaw-toxic-comment-classification-challenge/prepared/public"
+OUTPUT_DATA_PATH = "output/4d08636e-bf37-40e0-b9d7-8ffb77d57ea2/1/executor/output"
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/jigsaw-toxic-comment-classification-challenge/prepared/public"
-OUTPUT_DATA_PATH = "output/40d01db3-cd9d-46e2-8d9c-d192fb8addff/1/executor/output"
+# Task-adaptive type definitions
+X = pd.DataFrame  # Feature matrix: contains 'comment_text'
+y = pd.DataFrame  # Target vector: contains 6 toxicity labels
+Ids = pd.Series   # Identifier type: contains 'id' for test set
 
-# For type hinting, DT is assumed to be pandas DataFrame or Series
-DT = pd.DataFrame | pd.Series
-
-
-def load_data(validation_mode: bool = False) -> Tuple[DT, DT, DT, DT]:
+def load_data(validation_mode: bool = False) -> Tuple[X, y, X, Ids]:
     """
-    Loads, splits, and returns the initial datasets for the Jigsaw Toxic Comment Classification Challenge.
+    Loads and prepares the datasets for the Toxic Comment Classification Challenge.
+
+    Args:
+        validation_mode: If True, returns a small subset (200 rows) for testing.
+
+    Returns:
+        X_train, y_train, X_test, test_ids
     """
-    train_path = os.path.join(BASE_DATA_PATH, "train.csv")
-    test_path = os.path.join(BASE_DATA_PATH, "test.csv")
+    print(f"Starting data loading. Validation mode: {validation_mode}")
 
-    nrows = 100 if validation_mode else None
+    # Define paths
+    train_csv_path = os.path.join(BASE_DATA_PATH, "train.csv")
+    test_csv_path = os.path.join(BASE_DATA_PATH, "test.csv")
 
-    # Load data
-    train_df = pd.read_csv(train_path, nrows=nrows)
-    test_df = pd.read_csv(test_path, nrows=nrows)
+    # Verify files exist
+    for path in [train_csv_path, test_csv_path]:
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Required data file not found: {path}")
 
-    # Define columns
-    target_cols = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
-    feature_col = 'comment_text'
-    id_col = 'id'
+    # Define column structures
+    target_columns = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    train_use_cols = ['comment_text'] + target_columns
+    test_use_cols = ['id', 'comment_text']
 
-    # Prepare training features and labels
-    # We keep it as a DataFrame to maintain feature structure consistency
-    X = train_df[[feature_col]]
-    y = train_df[target_cols].astype(np.float32)
+    # Load parameters
+    load_params_train = {
+        "filepath_or_buffer": train_csv_path,
+        "usecols": train_use_cols,
+        "dtype": {col: 'int8' for col in target_columns},
+        "engine": 'c'
+    }
+    load_params_test = {
+        "filepath_or_buffer": test_csv_path,
+        "usecols": test_use_cols,
+        "engine": 'c'
+    }
 
-    # Prepare test features and ids
-    X_test = test_df[[feature_col]]
-    test_ids = test_df[id_col]
+    if validation_mode:
+        load_params_train["nrows"] = 200
+        load_params_test["nrows"] = 200
 
-    # Verification of requirements
-    if X.empty or y.empty or X_test.empty or test_ids.empty:
-        raise ValueError("One or more loaded datasets are empty.")
+    # Load DataFrames
+    print("Reading train.csv...")
+    train_df = pd.read_csv(**load_params_train)
+    print("Reading test.csv...")
+    test_df = pd.read_csv(**load_params_test)
 
-    if len(X) != len(y):
-        raise ValueError(f"Alignment error: X has {len(X)} rows but y has {len(y)} rows.")
+    # Clean text data: ensure string type and fill missing
+    print("Pre-processing text columns...")
+    train_df['comment_text'] = train_df['comment_text'].fillna('').astype(str)
+    test_df['comment_text'] = test_df['comment_text'].fillna('').astype(str)
 
-    if len(X_test) != len(test_ids):
-        raise ValueError(f"Alignment error: X_test has {len(X_test)} rows but test_ids has {len(test_ids)} rows.")
+    # Structure outputs
+    X_train = train_df[['comment_text']]
+    y_train = train_df[target_columns]
+    X_test = test_df[['comment_text']]
+    test_ids = test_df['id']
 
-    if list(X.columns) != list(X_test.columns):
-        raise ValueError("Feature consistency error: X and X_test columns do not match.")
+    # Final sanity check
+    assert len(X_train) == len(y_train), "Train features and targets mismatch"
+    assert len(X_test) == len(test_ids), "Test features and IDs mismatch"
+    assert not X_train.empty and not y_train.empty and not X_test.empty and not test_ids.empty, "Empty data returned"
 
-    return X, y, X_test, test_ids
+    print(f"Data loading complete. Train size: {len(X_train)}, Test size: {len(X_test)}")
+    
+    return X_train, y_train, X_test, test_ids

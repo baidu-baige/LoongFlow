@@ -1,148 +1,105 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
 import os
-import pickle
+import zipfile
+import cudf
 from typing import Tuple
 
-import pandas as pd
+# Task-adaptive type definitions using RAPIDS cuDF for high-performance GPU data processing.
+# cuDF is chosen to handle the large scale (~10M rows) of the Russian text normalization dataset
+# efficiently within the available 140GB H20-3e GPU memory and 440GB system RAM.
+X = cudf.DataFrame
+y = cudf.Series
+Ids = cudf.Series
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/text-normalization-challenge-russian-language/prepared/public"
-OUTPUT_DATA_PATH = "output/dce1a922-fb4b-4006-9d03-6f53b7ea0718/1/executor/output"
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-12/evolux/output/mlebench/text-normalization-challenge-russian-language/prepared/public"
+OUTPUT_DATA_PATH = "output/ecfe1a48-59fb-4170-a38b-6ffb4a298ec0/10/executor/output"
+PREPARED_DIR = os.path.join(BASE_DATA_PATH, "prepared_optimized")
 
-# For type hinting, DT is assumed to be pandas DataFrame or Series
-DT = pd.DataFrame | pd.Series
-
-
-def load_data() -> Tuple[DT, DT, DT, DT]:
+def load_data(validation_mode: bool = False) -> Tuple[X, y, X, Ids]:
     """
-    Loads, splits, and returns the initial datasets.
-
-    This function takes no arguments as it should derive file paths from the task description
-    or predefined global variables.
-
-    Returns:
-        Tuple[DT, DT, DT, DT]: A tuple containing four elements:
-        - X (DT): Training data features.
-        - y (DT): Training data labels.
-        - X_test (DT): Test data features.
-        - test_ids (DT): Identifiers for the test data.
+    Loads and prepares the datasets required for the Russian Text Normalization task.
+    Uses GPU acceleration to minimize I/O and processing bottlenecks.
     """
-    # Create output directory if it doesn't exist
+    # Step 0: Ensure data readiness - prepare full data if missing
+    # Data preparation must be complete regardless of validation_mode
+    os.makedirs(PREPARED_DIR, exist_ok=True)
     os.makedirs(OUTPUT_DATA_PATH, exist_ok=True)
 
-    # Define file paths
-    train_path = os.path.join(BASE_DATA_PATH, "ru_train.csv.zip")
-    test_path = os.path.join(BASE_DATA_PATH, "ru_test_2.csv.zip")
-    sample_submission_path = os.path.join(BASE_DATA_PATH, "ru_sample_submission_2.csv.zip")
+    train_zip = os.path.join(BASE_DATA_PATH, "ru_train.csv.zip")
+    test_zip = os.path.join(BASE_DATA_PATH, "ru_test_2.csv.zip")
+    
+    # Filenames based on dataset structure
+    train_csv = os.path.join(PREPARED_DIR, "ru_train.csv")
+    test_csv = os.path.join(PREPARED_DIR, "ru_test_2.csv")
 
-    # Load training data - using chunked reading due to large size (9.5M rows)
-    print("Loading training data...")
-    train_chunks = []
-    chunk_size = 500000
+    # Extract training data if not already present
+    if not os.path.exists(train_csv):
+        print(f"Extracting {train_zip} to {PREPARED_DIR}...")
+        if not os.path.exists(train_zip):
+            raise FileNotFoundError(f"Source zip not found: {train_zip}")
+        with zipfile.ZipFile(train_zip, 'r') as z:
+            z.extractall(PREPARED_DIR)
+    
+    # Extract test data if not already present
+    if not os.path.exists(test_csv):
+        print(f"Extracting {test_zip} to {PREPARED_DIR}...")
+        if not os.path.exists(test_zip):
+            raise FileNotFoundError(f"Source zip not found: {test_zip}")
+        with zipfile.ZipFile(test_zip, 'r') as z:
+            z.extractall(PREPARED_DIR)
 
-    for chunk in pd.read_csv(train_path, chunksize=chunk_size):
-        train_chunks.append(chunk)
-
-    train_df = pd.concat(train_chunks, ignore_index=True)
-    print(f"Training data loaded: {len(train_df)} rows")
-
-    # Load test data
-    print("Loading test data...")
-    test_df = pd.read_csv(test_path)
-    print(f"Test data loaded: {len(test_df)} rows")
-
-    # Load sample submission for reference
-    print("Loading sample submission...")
-    sample_submission = pd.read_csv(sample_submission_path)
-    print(f"Sample submission loaded: {len(sample_submission)} rows")
-
-    # Handle missing values in 'before' column
-    train_df['before'] = train_df['before'].fillna('')
-    test_df['before'] = test_df['before'].fillna('')
-
-    # Create unique identifier 'id' column
-    train_df['id'] = train_df['sentence_id'].astype(str) + '_' + train_df['token_id'].astype(str)
-    test_df['id'] = test_df['sentence_id'].astype(str) + '_' + test_df['token_id'].astype(str)
-
-    # Build lookup dictionaries for exact matches (before -> after mapping)
-    print("Building lookup dictionaries...")
-    before_after_mapping = {}
-    class_examples = {}
-
-    # Group by 'before' and find most common 'after' transformation
-    before_after_counts = train_df.groupby(['before', 'after']).size().reset_index(name='count')
-
-    # For each 'before' token, get the most common 'after' transformation
-    idx = before_after_counts.groupby('before')['count'].idxmax()
-    most_common_transformations = before_after_counts.loc[idx]
-
-    for _, row in most_common_transformations.iterrows():
-        before_after_mapping[row['before']] = row['after']
-
-    print(f"Built before->after mapping with {len(before_after_mapping)} entries")
-
-    # Build class-specific transformation examples
-    for class_name in train_df['class'].unique():
-        class_data = train_df[train_df['class'] == class_name]
-        # Store sample transformations for each class
-        class_examples[class_name] = class_data[['before', 'after']].drop_duplicates().head(1000).to_dict('records')
-
-    print(f"Built class examples for {len(class_examples)} classes")
-
-    # Extract class distribution statistics
-    class_distribution = train_df['class'].value_counts().to_dict()
-    print(f"Class distribution computed: {len(class_distribution)} classes")
-
-    # Create vocabulary of unique 'before' tokens with their transformations
-    vocabulary = {}
-    for before_token, group in train_df.groupby('before'):
-        after_counts = group['after'].value_counts()
-        vocabulary[before_token] = {
-            'most_common': after_counts.index[0],
-            'count': after_counts.iloc[0],
-            'total': len(group),
-            'classes': group['class'].value_counts().to_dict()
-        }
-
-    print(f"Built vocabulary with {len(vocabulary)} unique tokens")
-
-    # Save auxiliary data structures for later use
-    auxiliary_data = {
-        'before_after_mapping': before_after_mapping,
-        'class_examples': class_examples,
-        'class_distribution': class_distribution,
-        'vocabulary': vocabulary
+    # Step 1: Load data from sources
+    # Use compact dtypes for memory efficiency:
+    # sentence_id (up to ~700k) -> int32
+    # token_id (up to ~700) -> int16
+    # class -> category (15 distinct classes)
+    train_dtypes = {
+        'sentence_id': 'int32',
+        'token_id': 'int16',
+        'class': 'category',
+        'before': 'string',
+        'after': 'string'
+    }
+    
+    test_dtypes = {
+        'sentence_id': 'int32',
+        'token_id': 'int16',
+        'before': 'string'
     }
 
-    auxiliary_path = os.path.join(OUTPUT_DATA_PATH, 'auxiliary_data.pkl')
-    with open(auxiliary_path, 'wb') as f:
-        pickle.dump(auxiliary_data, f)
-    print(f"Saved auxiliary data to {auxiliary_path}")
+    # Apply validation subset logic during the read stage for performance
+    nrows = 200 if validation_mode else None
 
-    # Prepare features (X) and labels (y) for training
-    # Features include: sentence_id, token_id, before, class, id
-    feature_columns = ['sentence_id', 'token_id', 'before', 'class', 'id']
-    X = train_df[feature_columns].copy()
-    y = train_df['after'].copy()
+    print(f"Loading training data (nrows={nrows})...")
+    df_train = cudf.read_csv(train_csv, dtype=train_dtypes, nrows=nrows)
+    
+    print(f"Loading test data (nrows={nrows})...")
+    # Note: ru_test_2.csv matches the column structure needed for inference
+    df_test = cudf.read_csv(test_csv, dtype=test_dtypes, nrows=nrows)
 
-    # Prepare test features (X_test) and test identifiers
-    # Note: test set does NOT have 'class' column, so we add a placeholder
-    test_df['class'] = 'UNKNOWN'  # Placeholder since test doesn't have class
-    X_test = test_df[feature_columns].copy()
-    test_ids = test_df['id'].copy()
+    # Step 2: Structure data into required return format
+    # X_train includes 'class' to allow semiotic-aware modeling or filtering in downstream stages
+    X_train = df_train[['sentence_id', 'token_id', 'before', 'class']]
+    y_train = df_train['after']
+    
+    # X_test matches features available at inference time
+    X_test = df_test[['sentence_id', 'token_id', 'before']]
+    
+    # Step 3: Create submission identifiers
+    # The competition requires 'id' formatted as 'sentence_id_token_id' (e.g., "123_5")
+    test_ids = df_test['sentence_id'].astype('str') + "_" + df_test['token_id'].astype('str')
 
-    # Verify alignment requirements
-    assert len(X) == len(y), f"X and y length mismatch: {len(X)} vs {len(y)}"
-    assert len(X_test) == len(test_ids), f"X_test and test_ids length mismatch: {len(X_test)} vs {len(test_ids)}"
-    assert list(X.columns) == list(X_test.columns), "Column mismatch between X and X_test"
+    # Step 4: Verification and Cleanup
+    if X_train.empty or y_train.empty or X_test.empty or test_ids.empty:
+        raise ValueError("One or more loaded datasets are empty. Check data source integrity.")
 
-    print(f"\nFinal shapes:")
-    print(f"  X: {X.shape}")
-    print(f"  y: {y.shape}")
-    print(f"  X_test: {X_test.shape}")
-    print(f"  test_ids: {test_ids.shape}")
+    # Memory Cleanup: Free the full DataFrames as we have extracted the necessary components
+    del df_train
+    del df_test
 
-    return X, y, X_test, test_ids
+    print(f"Data loading complete.")
+    print(f" - X_train shape: {X_train.shape}")
+    print(f" - y_train shape: {y_train.shape}")
+    print(f" - X_test shape:  {X_test.shape}")
+    print(f" - test_ids shape: {test_ids.shape}")
+
+    return X_train, y_train, X_test, test_ids

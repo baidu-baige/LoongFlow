@@ -1,87 +1,124 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
 import os
-
-import numpy as np
 import pandas as pd
-from sklearn.metrics import roc_auc_score
+import numpy as np
+import torch
+from typing import Dict
 
-from create_features import create_features
-from cross_validation import cross_validation
-from ensemble import ensemble
+# Import component functions
 from load_data import load_data
+from preprocess import preprocess
+from get_splitter import get_splitter
 from train_and_predict import PREDICTION_ENGINES
+from ensemble import ensemble
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/plant-pathology-2020-fgvc7/prepared/public"
-OUTPUT_DATA_PATH = "output/1799683e-18f2-43a3-97d1-8b0bdddc3200/1/executor/output"
-
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-12/evolux/output/mlebench/plant-pathology-2020-fgvc7/prepared/public"
+OUTPUT_DATA_PATH = "output/fc83b0b0-0bd1-41b2-8cd2-ac42c45cd457/2/executor/output"
 
 def workflow() -> dict:
     """
     Orchestrates the complete end-to-end machine learning pipeline in production mode.
+    Executes a 5-fold Stratified Cross-Validation using an ensemble of CNN backbones.
     """
-    # 1. Load full dataset
-    X, y, X_test, test_ids = load_data(validation_mode=False)
-
-    # 2. Set up cross-validation strategy
-    splitter = cross_validation(X, y)
-
-    # 3. Initialize prediction storage
-    # all_oof_preds stores full OOF predictions for each model
-    # all_test_preds stores a list of test set predictions from each fold
-    all_oof_preds = {}
-    all_test_preds = {}
-    for model_name in PREDICTION_ENGINES.keys():
-        all_oof_preds[model_name] = np.zeros((len(X), y.shape[1]))
-        all_test_preds[model_name] = []
-
-    # 4. Cross-validation loop
-    for fold, (train_idx, val_idx) in enumerate(splitter.split(X, y)):
-        X_train_fold, X_val_fold = X.iloc[train_idx], X.iloc[val_idx]
-        y_train_fold, y_val_fold = y.iloc[train_idx], y.iloc[val_idx]
-
-        # Apply create_features to this fold
-        X_tr, y_tr, X_va, y_va, X_te = create_features(
-            X_train_fold, y_train_fold, X_val_fold, y_val_fold, X_test
-        )
-
-        # Train each model available in the registry
-        for model_name, train_fn in PREDICTION_ENGINES.items():
-            # Execute training and obtain predictions
-            val_preds, test_preds = train_fn(X_tr, y_tr, X_va, y_va, X_te)
-
-            # Store OOF predictions and test fold predictions
-            all_oof_preds[model_name][val_idx] = val_preds
-            all_test_preds[model_name].append(test_preds)
-
-    # 5. Ensemble predictions from all models and folds
-    # Pass full labels for any potential optimization/evaluation within ensemble
-    final_test_preds = ensemble(all_oof_preds, all_test_preds, y)
-
-    # 6. Calculate validation scores
-    model_scores = {}
-    for model_name, oof_preds in all_oof_preds.items():
-        # Evaluation is based on mean column-wise ROC AUC
-        score = roc_auc_score(y.values, oof_preds, average='macro', multi_class='ovr')
-        model_scores[model_name] = float(score)
-
-    # 7. Generate final submission artifact
-    # Construct DataFrame with required columns: image_id, healthy, multiple_diseases, rust, scab
-    submission_df = pd.DataFrame(final_test_preds, columns=y.columns)
-    submission_df.insert(0, 'image_id', test_ids.values)
-
-    # Ensure output directory exists before saving
+    print("Starting production workflow...")
+    
+    # Ensure output directory exists
     if not os.path.exists(OUTPUT_DATA_PATH):
         os.makedirs(OUTPUT_DATA_PATH, exist_ok=True)
 
-    submission_path = os.path.join(OUTPUT_DATA_PATH, "submission.csv")
-    submission_df.to_csv(submission_path, index=False)
+    # 1. Load full dataset
+    # Returns image paths, multi-label targets, test paths, and test IDs
+    X_train_paths, y_train, X_test_paths, test_ids = load_data(validation_mode=False)
+    
+    # 2. Define splitting strategy (5-fold Stratified CV)
+    splitter = get_splitter(X_train_paths, y_train)
+    n_splits = splitter.get_n_splits()
+    
+    # Initialize containers for out-of-fold (OOF) and test predictions
+    num_samples = len(X_train_paths)
+    num_classes = y_train.shape[1]
+    oof_predictions = np.zeros((num_samples, num_classes), dtype=np.float32)
+    all_test_preds_list = []
 
-    # 8. Return task deliverables in a serializable format
+    # 3. Cross-Validation Loop
+    print(f"Executing {n_splits}-fold cross-validation...")
+    for fold, (train_idx, val_idx) in enumerate(splitter.split(X_train_paths, y_train)):
+        print(f"\n--- Processing Fold {fold + 1}/{n_splits} ---")
+        
+        # Split paths and labels
+        X_tr_fold = [X_train_paths[i] for i in train_idx]
+        y_tr_fold = y_train[train_idx]
+        X_vl_fold = [X_train_paths[i] for i in val_idx]
+        y_vl_fold = y_train[val_idx]
+        
+        # Preprocess: Convert paths to PyTorch Datasets with augmentations
+        X_tr_ds, _, X_vl_ds, _, X_te_ds = preprocess(
+            X_tr_fold, y_tr_fold, 
+            X_vl_fold, y_vl_fold, 
+            X_test_paths
+        )
+        
+        # Train and Predict: Using the ensemble model engine (EfficientNetV2-S + ConvNeXt-Tiny)
+        # This engine handles DDP training and TTA inference
+        engine = PREDICTION_ENGINES["plant_pathology_ensemble"]
+        fold_val_preds, fold_test_preds = engine(
+            X_tr_ds, y_tr_fold,
+            X_vl_ds, y_vl_fold,
+            X_te_ds
+        )
+        
+        # Store fold results
+        oof_predictions[val_idx] = fold_val_preds
+        all_test_preds_list.append(fold_test_preds)
+        
+        print(f"Fold {fold + 1} complete.")
+
+    # 4. Aggregate and Ensemble
+    # Average test predictions across all folds
+    avg_test_preds = np.mean(all_test_preds_list, axis=0)
+    
+    # Use the ensemble function to finalize predictions and calculate OOF AUC.
+    # Passing the full OOF and averaged test predictions as a single model entry.
+    all_val_preds_dict = {"cv_ensemble": oof_predictions}
+    all_test_preds_dict = {"cv_ensemble": avg_test_preds}
+    
+    final_test_predictions = ensemble(
+        all_val_preds=all_val_preds_dict,
+        all_test_preds=all_test_preds_dict,
+        y_val=y_train
+    )
+
+    # 5. Compute Prediction Statistics
+    prediction_stats = {
+        "oof": {
+            "mean": float(np.mean(oof_predictions)),
+            "std": float(np.std(oof_predictions)),
+            "min": float(np.min(oof_predictions)),
+            "max": float(np.max(oof_predictions)),
+        },
+        "test": {
+            "mean": float(np.mean(final_test_predictions)),
+            "std": float(np.std(final_test_predictions)),
+            "min": float(np.min(final_test_predictions)),
+            "max": float(np.max(final_test_predictions)),
+        }
+    }
+
+    # 6. Generate and Save Deliverables
+    # Load original train.csv to ensure correct target column order
+    train_df = pd.read_csv(os.path.join(BASE_DATA_PATH, "train.csv"))
+    target_cols = [c for c in train_df.columns if c != 'image_id']
+    
+    # Create submission DataFrame
+    submission_df = pd.DataFrame(final_test_predictions, columns=target_cols)
+    submission_df.insert(0, 'image_id', test_ids)
+    
+    # Save to CSV
+    submission_file_path = os.path.join(OUTPUT_DATA_PATH, "submission.csv")
+    submission_df.to_csv(submission_file_path, index=False)
+    
+    print(f"Workflow execution finished. Submission saved to {submission_file_path}")
+
     return {
-        "submission_file_path": submission_path,
-        "model_scores": model_scores
+        "submission_file_path": submission_file_path,
+        "prediction_stats": prediction_stats,
     }

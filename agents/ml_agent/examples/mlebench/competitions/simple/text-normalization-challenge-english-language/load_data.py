@@ -1,77 +1,85 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
+import pandas as pd
 import os
 from typing import Tuple
 
-import cudf
-import pandas as pd
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-04/evolux/output/mlebench/text-normalization-challenge-english-language/prepared/public"
+OUTPUT_DATA_PATH = "output/9fef8e79-9e97-4657-be88-07dd4ac6f366/1/executor/output"
 
-BASE_DATA_PATH = "/root/workspace/evolux_ml/output/mlebench/text-normalization-challenge-english-language/prepared/public"
-OUTPUT_DATA_PATH = "output/12e29d80-a70c-426a-9331-de3aa1a6ce7c/14/executor/output"
+# Task-adaptive type definitions
+X = pd.DataFrame
+y = pd.Series
+Ids = pd.Series
 
-# For type hinting, DT is assumed to be pandas DataFrame or Series
-DT = pd.DataFrame | pd.Series
-
-
-def load_data(validation_mode: bool = False) -> Tuple[DT, DT, DT, DT]:
+def load_data(validation_mode: bool = False) -> Tuple[X, y, X, Ids]:
     """
-    Loads, splits, and returns the initial datasets using GPU acceleration where possible.
-    
-    Args:
-        validation_mode: Controls the data loading behavior.
-            - False (default): Load the complete dataset for actual training/inference.
-            - True: Load a small subset of data (≤100 rows) for quick code validation.
-
-    Returns:
-        Tuple[DT, DT, DT, DT]: (X, y, X_test, test_ids)
+    Loads and prepares the datasets for the English Text Normalization Challenge.
+    Maintaining sentence-token hierarchy by preserving IDs.
     """
     train_path = os.path.join(BASE_DATA_PATH, "en_train.csv.zip")
     test_path = os.path.join(BASE_DATA_PATH, "en_test_2.csv.zip")
+    
+    # Verify mandatory files exist
+    if not os.path.exists(train_path):
+        raise FileNotFoundError(f"Missing training data at: {train_path}")
+    if not os.path.exists(test_path):
+        raise FileNotFoundError(f"Missing test data at: {test_path}")
 
-    # Determine the number of rows to load
-    nrows = 100 if validation_mode else None
+    # Explicit dtypes for memory efficiency and technical specification compliance
+    # 'class' is omitted from test but provided in train for training context/multi-tasking
+    train_dtypes = {
+        'sentence_id': 'int32',
+        'token_id': 'int16',
+        'before': 'str',
+        'class': 'category',
+        'after': 'str'
+    }
+    test_dtypes = {
+        'sentence_id': 'int32',
+        'token_id': 'int16',
+        'before': 'str'
+    }
 
-    # Load data using pandas first to handle zip decompression and preserve empty tokens
-    # keep_default_na=False ensures that tokens like "NA" are not interpreted as nulls
-    train_pd = pd.read_csv(train_path, compression='zip', nrows=nrows, keep_default_na=False)
-    test_pd = pd.read_csv(test_path, compression='zip', nrows=nrows, keep_default_na=False)
+    # Load data with keep_default_na=False to prevent interpretation of tokens like "NA" or "null" as NaN
+    print(f"Loading datasets (validation_mode={validation_mode})...")
+    
+    try:
+        # Load train set
+        train_df = pd.read_csv(
+            train_path, 
+            compression='zip', 
+            dtype=train_dtypes, 
+            keep_default_na=False,
+            nrows=200 if validation_mode else None
+        )
+        
+        # Load test set
+        test_df = pd.read_csv(
+            test_path, 
+            compression='zip', 
+            dtype=test_dtypes, 
+            keep_default_na=False, 
+            nrows=200 if validation_mode else None
+        )
+    except Exception as e:
+        print(f"Error during file loading: {e}")
+        raise
 
-    # Move to GPU (cuDF) for efficient processing
-    train_gdf = cudf.from_pandas(train_pd)
-    test_gdf = cudf.from_pandas(test_pd)
+    # Structure Training data
+    # Preserve hierarchy via sentence_id and token_id
+    X_train = train_df[['sentence_id', 'token_id', 'before', 'class']]
+    y_train = train_df['after']
 
-    # Preprocessing and memory optimization
-    # Convert numeric IDs to int32 to save memory
-    train_gdf['sentence_id'] = train_gdf['sentence_id'].astype('int32')
-    train_gdf['token_id'] = train_gdf['token_id'].astype('int32')
-    test_gdf['sentence_id'] = test_gdf['sentence_id'].astype('int32')
-    test_gdf['token_id'] = test_gdf['token_id'].astype('int32')
-
-    # Sort by sentence_id and token_id to maintain sequence order
-    # This is critical for context window features and sequence-based modeling
-    train_gdf = train_gdf.sort_values(['sentence_id', 'token_id']).reset_index(drop=True)
-    test_gdf = test_gdf.sort_values(['sentence_id', 'token_id']).reset_index(drop=True)
-
-    # Feature extraction (X and X_test must be identical in columns)
-    features = ['sentence_id', 'token_id', 'before']
-    X = train_gdf[features]
-
-    # y contains the target 'after' and the 'class' for specialized normalization logic
-    y = train_gdf[['after', 'class']]
-
-    X_test = test_gdf[features]
-
-    # Create test identifiers (format: sentence_id_token_id) as required for submission
-    test_ids = test_gdf['sentence_id'].astype(str) + "_" + test_gdf['token_id'].astype(str)
+    # Structure Test data
+    X_test = test_df[['sentence_id', 'token_id', 'before']]
+    
+    # Generate submission format IDs: "{sentence_id}_{token_id}"
+    # This aligns with the requirement for test_ids to map predictions to output format.
+    test_ids = test_df['sentence_id'].astype(str) + "_" + test_df['token_id'].astype(str)
     test_ids.name = 'id'
 
-    # Convert back to pandas for the required return type specified in the prompt
-    return (
-        X.to_pandas(),
-        y.to_pandas(),
-        X_test.to_pandas(),
-        test_ids.to_pandas()
-    )
+    # Performance logging
+    print(f"Completed loading.")
+    print(f"Train samples: {len(X_train)} | Test samples: {len(X_test)}")
+    print(f"Memory Usage (Train): {X_train.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+
+    return X_train, y_train, X_test, test_ids

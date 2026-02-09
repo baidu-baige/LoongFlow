@@ -1,115 +1,137 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
 import os
-
+import gc
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score
+import torch
 
-from create_features import create_features
-from cross_validation import cross_validation
-from ensemble import ensemble
+# Import all component functions
 from load_data import load_data
+from preprocess import preprocess
+from get_splitter import get_splitter
 from train_and_predict import PREDICTION_ENGINES
+from ensemble import ensemble
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/cassava-leaf-disease-classification/prepared/public"
-OUTPUT_DATA_PATH = "output/068f0c14-e630-462e-bc46-9d2d4b1d5fc3/5/executor/output"
-
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-12/evolux/output/mlebench/cassava-leaf-disease-classification/prepared/public"
+OUTPUT_DATA_PATH = "output/502e395f-5bca-4b30-9a81-fc7b49a1e544/3/executor/output"
 
 def workflow() -> dict:
     """
     Orchestrates the complete end-to-end machine learning pipeline in production mode.
-    
-    This function integrates all pipeline components (data loading, feature engineering, 
-    cross-validation, model training, and ensembling) to generate final deliverables 
-    specified in the task description.
+    Executes a 5-fold cross-validation loop training an ensemble of ConvNeXt and Swin models.
     """
-    # 1. Load full dataset for production run
-    # Requirement: MUST call load_data(validation_mode=False)
-    X, y, X_test, test_ids = load_data(validation_mode=False)
-
-    # 2. Set up the cross-validation strategy (Stratified 5-Fold)
-    cv = cross_validation(X, y)
-
-    # 3. Initialize prediction containers
-    all_oof_preds = {}
-    all_test_preds = {}
-    model_scores = {}
-    num_classes = 5
-
-    # Ensure the output directory exists for artifacts
+    # Create output directory for artifacts
     os.makedirs(OUTPUT_DATA_PATH, exist_ok=True)
 
-    # Iterate through each model configuration in the prediction engine registry
-    for model_name, train_fn in PREDICTION_ENGINES.items():
-        # Initialize an array to store full out-of-fold probability predictions
-        oof_probs = np.zeros((len(X), num_classes))
-        # Store test probability predictions from each fold
-        fold_test_preds_list = []
+    # 1. Load complete dataset (Production mode)
+    print("Stage 1: Loading full dataset...")
+    X_train_all, y_train_all, X_test_meta, test_ids = load_data(validation_mode=False)
 
-        # Perform cross-validation training and inference
-        # Iterates through 5 folds as defined by StratifiedKFold
-        for fold, (train_idx, val_idx) in enumerate(cv.split(X, y)):
-            # Split features and labels into training and validation sets for the current fold
-            X_train_fold, X_val_fold = X.iloc[train_idx], X.iloc[val_idx]
-            y_train_fold, y_val_fold = y.iloc[train_idx], y.iloc[val_idx]
-
-            # Apply feature engineering / transformations
-            # In this pipeline, create_features persists augmentation settings and returns metadata
-            Xt_train, yt_train, Xt_val, yt_val, Xt_test = create_features(
-                X_train_fold, y_train_fold, X_val_fold, y_val_fold, X_test
-            )
-
-            # Train the model and perform inference on validation and test sets
-            # The train_fn (e.g., train_efficientnet_b4_ns_heavy) handles:
-            # - Training for 10 epochs
-            # - Best weight selection
-            # - 4-view TTA (Original, Horiz Flip, Vert Flip, Transpose)
-            val_probs, test_probs = train_fn(
-                Xt_train, yt_train, Xt_val, yt_val, Xt_test
-            )
-
-            # Record the validation probabilities for OOF assessment
-            oof_probs[val_idx] = val_probs
-            # Record the test probabilities for ensembling
-            fold_test_preds_list.append(test_probs)
-
-        # Store model-specific results for the ensemble stage
-        all_oof_preds[model_name] = oof_probs
-        all_test_preds[model_name] = fold_test_preds_list
-
-        # Calculate CV Accuracy for logging and validation
-        oof_labels = np.argmax(oof_probs, axis=1)
-        score = accuracy_score(y.values, oof_labels)
-        model_scores[model_name] = float(score)
-
-        # Save model-specific OOF predictions to the artifact directory
-        np.save(os.path.join(OUTPUT_DATA_PATH, f"{model_name}_oof.npy"), oof_probs)
-
-    # 4. Ensemble all model and fold predictions using soft-voting
-    # The ensemble function averages probabilities across all folds and models
-    y_true_full = y.values
-    final_test_labels = ensemble(all_oof_preds, all_test_preds, y_true_full)
-
-    # 5. Generate the final submission file
-    submission_df = pd.DataFrame({
-        'image_id': test_ids,
-        'label': final_test_labels
-    })
-    submission_file_path = os.path.join(OUTPUT_DATA_PATH, "submission.csv")
-    submission_df.to_csv(submission_file_path, index=False)
-
-    # 6. Construct and return the workflow summary
-    # Must be JSON-serializable
-    output_info = {
-        "submission_file_path": submission_file_path,
-        "model_scores": model_scores,
-        "num_folds": 5,
-        "num_classes": 5,
-        "status": "success"
+    # 2. Set up data splitting strategy (Stratified 5-Fold)
+    print("Stage 2: Setting up 5-fold cross-validation...")
+    splitter = get_splitter(X_train_all, y_train_all)
+    
+    num_train = len(X_train_all)
+    num_test = len(X_test_meta)
+    num_classes = 5
+    
+    # Initialize separate buffers (numpy arrays) for each model architecture as per technical spec
+    # This ensures decoupled buffer management for the weighted ensembler
+    oof_buffers = {
+        "convnext": np.zeros((num_train, num_classes), dtype=np.float32),
+        "swin": np.zeros((num_train, num_classes), dtype=np.float32)
+    }
+    test_buffers = {
+        "convnext": np.zeros((num_test, num_classes), dtype=np.float32),
+        "swin": np.zeros((num_test, num_classes), dtype=np.float32)
     }
 
+    # 3. Sequential 5-Fold Cross-Validation Loop
+    print("Stage 3: Executing 5-fold CV loop...")
+    for fold_idx, (train_idx, val_idx) in enumerate(splitter.split(X_train_all, y_train_all)):
+        print(f"\n--- Processing Fold {fold_idx + 1}/5 ---")
+        
+        # Define fold subsets
+        X_train_fold = X_train_all.iloc[train_idx]
+        y_train_fold = y_train_all.iloc[train_idx]
+        X_val_fold = X_train_all.iloc[val_idx]
+        y_val_fold = y_train_all.iloc[val_idx]
+
+        # a. Preprocess images into model-ready high-resolution tensors
+        print(f"Fold {fold_idx + 1}: Preprocessing image data...")
+        (
+            X_train_tensor,
+            y_train_tensor,
+            X_val_tensor,
+            y_val_tensor,
+            X_test_tensor
+        ) = preprocess(X_train_fold, y_train_fold, X_val_fold, y_val_fold, X_test_meta)
+
+        # b. Train High-Res Vision Ensemble (ConvNeXt-Base & Swin-Base)
+        # This engine executes DDP internally and returns decoupled model predictions
+        print(f"Fold {fold_idx + 1}: Training models and generating predictions...")
+        val_preds_dict, test_preds_dict = PREDICTION_ENGINES["high_res_vision_ensemble"](
+            X_train_tensor,
+            y_train_tensor,
+            X_val_tensor,
+            y_val_tensor,
+            X_test_tensor
+        )
+
+        # c. Record OOF predictions and accumulate test predictions for each model
+        for model_key in ["convnext", "swin"]:
+            oof_buffers[model_key][val_idx] = val_preds_dict[model_key]
+            # Accumulate test predictions (simple averaging across folds)
+            test_buffers[model_key] += test_preds_dict[model_key] / 5.0
+
+        # d. Resource Management: Clear GPU memory and garbage collect after each model/fold
+        print(f"Fold {fold_idx + 1}: Cleaning up resources...")
+        del X_train_tensor, y_train_tensor, X_val_tensor, y_val_tensor, X_test_tensor
+        del X_train_fold, y_train_fold, X_val_fold, y_val_fold
+        del val_preds_dict, test_preds_dict
+        torch.cuda.empty_cache()
+        gc.collect()
+
+    # 4. Final Ensemble and Weight Optimization
+    # The ensemble function is provided with the full decoupled OOF dictionary for Nelder-Mead optimization
+    print("\nStage 4: Performing weighted ensemble optimization...")
+    y_true_tensor = torch.tensor(y_train_all.values, dtype=torch.long)
+    final_test_labels = ensemble(oof_buffers, test_buffers, y_true_tensor)
+
+    # 5. Generate deliverables
+    print("Stage 5: Generating submission.csv and computing statistics...")
+    submission_df = pd.DataFrame({
+        "image_id": test_ids,
+        "label": final_test_labels
+    })
+    submission_path = os.path.join(OUTPUT_DATA_PATH, "submission.csv")
+    submission_df.to_csv(submission_path, index=False)
+    
+    # Compute OOF labels for summary statistics (using simple average/sum for representation)
+    combined_oof_probs = oof_buffers["convnext"] + oof_buffers["swin"]
+    oof_labels = np.argmax(combined_oof_probs, axis=1)
+
+    output_info = {
+        "submission_file_path": submission_path,
+        "prediction_stats": {
+            "oof": {
+                "mean": float(np.mean(oof_labels)),
+                "std": float(np.std(oof_labels)),
+                "min": float(np.min(oof_labels)),
+                "max": float(np.max(oof_labels))
+            },
+            "test": {
+                "mean": float(np.mean(final_test_labels)),
+                "std": float(np.std(final_test_labels)),
+                "min": float(np.min(final_test_labels)),
+                "max": float(np.max(final_test_labels))
+            },
+        },
+    }
+
+    # Final resource cleanup
+    del oof_buffers, test_buffers, submission_df, combined_oof_probs
+    torch.cuda.empty_cache()
+    gc.collect()
+
+    print("Pipeline execution completed successfully.")
     return output_info

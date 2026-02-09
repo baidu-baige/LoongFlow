@@ -1,220 +1,236 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
+import os
 import gc
-from typing import Callable, Dict, Tuple
-
+import random
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from scipy.stats import spearmanr
 from torch.utils.data import DataLoader, Dataset
-from transformers import DebertaV2Config, DebertaV2Model, get_cosine_schedule_with_warmup
+from torch.cuda.amp import autocast, GradScaler
+from transformers import RobertaModel, RobertaConfig, BertModel, BertConfig, get_linear_schedule_with_warmup
+from typing import Tuple, Dict, Callable
 
-BASE_DATA_PATH = "/root/workspace/evolux_ml/output/mlebench/google-quest-challenge/prepared/public"
-OUTPUT_DATA_PATH = "output/ea4f9f02-c6be-4ad0-a6fd-71930e8fb81e/15/executor/output"
+# Constants and Paths
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/2-05/evolux/output/mlebench/google-quest-challenge/prepared/public"
+OUTPUT_DATA_PATH = "output/aaa741b3-cb02-44fc-a666-dd434e563444/8/executor/output"
 
-# Type hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-PredictionFunction = Callable[[DT, DT, DT, DT, DT], Tuple[DT, DT]]
+# Task-adaptive type definitions
+X = pd.DataFrame
+y = pd.DataFrame
+Predictions = np.ndarray
 
+# Model Function Type
+ModelFn = Callable[
+    [X, y, X, y, X],
+    Tuple[Predictions, Predictions]
+]
 
-# ===== Helper Functions =====
+# ===== Reproducibility =====
+def seed_everything(seed=42):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
 
-def compute_spearman(y_true, y_pred):
-    """
-    Computes the mean column-wise Spearman's correlation coefficient.
-    """
-    scores = []
-    for i in range(y_true.shape[1]):
-        score, _ = spearmanr(y_true[:, i], y_pred[:, i])
-        if np.isnan(score):
-            score = 0.0
-        scores.append(score)
-    return np.mean(scores)
-
+# ===== Dataset Implementation =====
 
 class QuestDataset(Dataset):
-    """
-    Dataset for Google QUEST challenge handling text tokens and metadata.
-    """
-
-    def __init__(self, X: pd.DataFrame, y: pd.DataFrame = None):
-        if isinstance(X, pd.DataFrame):
-            self.X = X.values
-        else:
-            self.X = X
-
-        if y is not None:
-            if isinstance(y, (pd.DataFrame, pd.Series)):
-                self.y = y.values
-            else:
-                self.y = y
-        else:
-            self.y = None
+    """Dataset for Google QUEST dual-model tokens and metadata."""
+    def __init__(self, X_df: pd.DataFrame, y_df: pd.DataFrame = None, model_type: str = 'roberta'):
+        self.X = X_df.values.astype(np.float32)
+        self.y = y_df.values.astype(np.float32) if y_df is not None else None
+        self.model_type = model_type
+        
+        # Mapping based on preprocess.py column structure:
+        # r_id (0:512), r_mask (512:1024), b_id (1024:1536), b_mask (1536:2048),
+        # category_id (2048), host_id (2049), scalars (2050:2067)
+        if model_type == 'roberta':
+            self.id_slice = slice(0, 512)
+            self.mask_slice = slice(512, 1024)
+        else: # bert
+            self.id_slice = slice(1024, 1536)
+            self.mask_slice = slice(1536, 2048)
 
     def __len__(self):
         return len(self.X)
 
     def __getitem__(self, idx):
-        item = {
-            'input_ids': torch.tensor(self.X[idx, :512], dtype=torch.long),
-            'attention_mask': torch.tensor(self.X[idx, 512:1024], dtype=torch.long),
-            'meta': torch.tensor(self.X[idx, 1024:], dtype=torch.float)
-        }
+        row = self.X[idx]
+        input_ids = torch.as_tensor(row[self.id_slice], dtype=torch.long)
+        attention_mask = torch.as_tensor(row[self.mask_slice], dtype=torch.long)
+        category_id = torch.as_tensor(int(row[2048]), dtype=torch.long)
+        host_id = torch.as_tensor(int(row[2049]), dtype=torch.long)
+        scalar_features = torch.as_tensor(row[2050:2067], dtype=torch.float32)
+        
         if self.y is not None:
-            item['targets'] = torch.tensor(self.y[idx], dtype=torch.float)
-        return item
+            targets = torch.as_tensor(self.y[idx], dtype=torch.float32)
+            return input_ids, attention_mask, category_id, host_id, scalar_features, targets
+        return input_ids, attention_mask, category_id, host_id, scalar_features
 
+# ===== High-Stability Model Implementation =====
 
-# ===== DeBERTa Model =====
-
-class DebertaV3LargeSwaModel(nn.Module):
+class StableQuestModel(nn.Module):
     """
-    DeBERTa-v3-large with Hybrid Pooling and Multi-Sample Dropout.
-    Hybrid Pooling: Last 4 CLS tokens + Global Average Pooling of last layer.
+    Dual-backbone compatible model with CLS+Mean pooling and linear head.
+    Supports RoBERTa and BERT backbones with multi-sample dropout.
     """
+    def __init__(self, model_path: str, model_type: str, n_cats: int, n_hosts: int):
+        super(StableQuestModel, self).__init__()
+        self.model_type = model_type
+        
+        local_files_only = os.path.exists(model_path)
+        if model_type == 'roberta':
+            config = RobertaConfig.from_pretrained(model_path, local_files_only=local_files_only)
+            self.backbone = RobertaModel.from_pretrained(model_path, config=config, local_files_only=local_files_only)
+        else: # bert
+            config = BertConfig.from_pretrained(model_path, local_files_only=local_files_only)
+            self.backbone = BertModel.from_pretrained(model_path, config=config, local_files_only=local_files_only)
+            
+        # Meta-embeddings (dim=4 as per specification)
+        self.cat_emb = nn.Embedding(n_cats + 5, 4)
+        self.host_emb = nn.Embedding(n_hosts + 5, 4)
+        
+        # Dimension: CLS(768) + Mean(768) + Cat(4) + Host(4) + Scalars(17) = 1561
+        input_dim = 768 * 2 + 4 + 4 + 17
+        
+        # Linear head with 5-mask Multi-sample Dropout (0.5)
+        self.output_head = nn.Linear(input_dim, 30)
+        self.dropouts = nn.ModuleList([nn.Dropout(0.5) for _ in range(5)])
 
-    def __init__(self, meta_dim: int):
-        super().__init__()
-        # Use use_safetensors=True to address torch.load vulnerability restriction in the environment
-        self.backbone = DebertaV2Model.from_pretrained(
-            'microsoft/deberta-v3-large',
-            output_hidden_states=True,
-            use_safetensors=True
-        )
-        # 4 * 1024 (last 4 CLS) + 1024 (avg pooling) = 5120
-        self.fc1 = nn.Linear(5120 + meta_dim, 1024)
-        self.mish = nn.Mish()
-        self.dropouts = nn.ModuleList([nn.Dropout(0.3) for _ in range(5)])
-        self.fc2 = nn.Linear(1024, 30)
-
-    def forward(self, input_ids, attention_mask, meta):
-        outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-        hidden_states = outputs.hidden_states
-
-        # Last 4 layers CLS tokens: (bs, 4 * 1024)
-        cls_tokens = torch.cat([hidden_states[-i][:, 0, :] for i in range(1, 5)], dim=1)
-
-        # Global average pooling of the last layer: (bs, 1024)
-        avg_pool = torch.mean(hidden_states[-1], dim=1)
-
-        # Hybrid concatenation
-        x = torch.cat([cls_tokens, avg_pool, meta], dim=1)
-
-        x = self.fc1(x)
-        x = self.mish(x)
-
-        # Multi-sample dropout (5 passes)
-        logits = torch.mean(torch.stack([self.fc2(dropout(x)) for dropout in self.dropouts]), dim=0)
+    def forward(self, input_ids, attention_mask, category_id, host_id, scalar_features):
+        outputs = self.backbone(input_ids, attention_mask=attention_mask)
+        last_hidden = outputs.last_hidden_state
+        
+        cls_pool = last_hidden[:, 0, :]
+        mean_pool = torch.mean(last_hidden, dim=1)
+        
+        c_emb = self.cat_emb(category_id)
+        h_emb = self.host_emb(host_id)
+        
+        concat = torch.cat([cls_pool, mean_pool, c_emb, h_emb, scalar_features], dim=1)
+        
+        logits = torch.mean(torch.stack([
+            self.output_head(dropout(concat)) for dropout in self.dropouts
+        ], dim=0), dim=0)
+        
         return logits
 
+# ===== Training Logic =====
 
-# ===== Training Function =====
-
-def train_deberta_v3_large_swa(
-    X_train: DT,
-    y_train: DT,
-    X_val: DT,
-    y_val: DT,
-    X_test: DT
-) -> Tuple[DT, DT]:
-    """
-    Trains DeBERTa-v3-large with SWA and Hybrid Pooling.
-    """
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    meta_dim = X_train.shape[1] - 1024
-
-    # Hyperparameters from Strategy Plan
-    epochs = 8
-    swa_start_epoch = 4  # Start at Epoch 4 of 8 (index 3)
-    batch_size = 4
-    accumulation_steps = 4  # Effective BS = 16
-    backbone_lr = 4e-6
-    head_lr = 2e-5
-
-    train_loader = DataLoader(QuestDataset(X_train, y_train), batch_size=batch_size, shuffle=True, num_workers=4)
-    val_loader = DataLoader(QuestDataset(X_val, y_val), batch_size=batch_size, shuffle=False)
-    test_loader = DataLoader(QuestDataset(X_test), batch_size=batch_size, shuffle=False)
-
-    model = DebertaV3LargeSwaModel(meta_dim).to(device)
-    swa_model = torch.optim.swa_utils.AveragedModel(model)
-
+def train_single_backbone(
+    model_type: str,
+    X_train: X,
+    y_train: y,
+    X_val: X,
+    X_test: X,
+    device: torch.device
+) -> Tuple[Predictions, Predictions]:
+    """Helper to train one transformer backbone and generate predictions."""
+    print(f"Training {model_type} backbone...")
+    
+    # Path configuration
+    base_paths = {
+        'roberta': '/mnt/pfs/loongflow/devmachine/2-05/models/roberta-base',
+        'bert': '/mnt/pfs/loongflow/devmachine/2-05/models/bert-base-uncased'
+    }
+    model_path = base_paths[model_type] if os.path.exists(base_paths[model_type]) else f"{model_type}-base-uncased" if model_type=='bert' else "roberta-base"
+    
+    n_cats = int(max(X_train['category_id'].max(), X_test['category_id'].max())) + 1
+    n_hosts = int(max(X_train['host_id'].max(), X_test['host_id'].max())) + 1
+    
+    model = StableQuestModel(model_path, model_type, n_cats, n_hosts).to(device)
+    
+    # Differential LRs: Backbone 2e-5, Head 1e-3
     optimizer = torch.optim.AdamW([
-        {'params': model.backbone.parameters(), 'lr': backbone_lr},
-        {'params': [p for n, p in model.named_parameters() if 'backbone' not in n], 'lr': head_lr}
-    ])
-
-    num_train_steps = (len(train_loader) // accumulation_steps) * epochs
-    num_warmup_steps = int(num_train_steps * 0.1)
-    scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps, num_train_steps)
-    swa_scheduler = torch.optim.swa_utils.SWALR(optimizer, swa_lr=head_lr)
-
+        {'params': model.backbone.parameters(), 'lr': 2e-5},
+        {'params': model.cat_emb.parameters(), 'lr': 1e-3},
+        {'params': model.host_emb.parameters(), 'lr': 1e-3},
+        {'params': model.output_head.parameters(), 'lr': 1e-3}
+    ], weight_decay=0.01)
+    
+    train_loader = DataLoader(QuestDataset(X_train, y_train, model_type), batch_size=8, shuffle=True, num_workers=4, pin_memory=True)
+    val_loader = DataLoader(QuestDataset(X_val, model_type=model_type), batch_size=16, shuffle=False, num_workers=4)
+    test_loader = DataLoader(QuestDataset(X_test, model_type=model_type), batch_size=16, shuffle=False, num_workers=4)
+    
+    epochs = 4
+    total_steps = len(train_loader) * epochs
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=int(0.1 * total_steps), num_training_steps=total_steps)
     criterion = nn.BCEWithLogitsLoss()
-    scaler = torch.cuda.amp.GradScaler()
-
+    scaler = GradScaler()
+    
     for epoch in range(epochs):
         model.train()
-        optimizer.zero_grad()
-        for i, batch in enumerate(train_loader):
-            ids = batch['input_ids'].to(device)
-            mask = batch['attention_mask'].to(device)
-            meta = batch['meta'].to(device)
-            targets = batch['targets'].to(device)
-
-            with torch.cuda.amp.autocast():
-                logits = model(ids, mask, meta)
-                loss = criterion(logits, targets) / accumulation_steps
-
+        for batch in train_loader:
+            batch = [t.to(device) for t in batch]
+            ids, mask, cat, host, lens, targets = batch
+            
+            optimizer.zero_grad()
+            with autocast():
+                logits = model(ids, mask, cat, host, lens)
+                loss = criterion(logits, targets)
+            
             scaler.scale(loss).backward()
-
-            if (i + 1) % accumulation_steps == 0 or (i + 1) == len(train_loader):
-                scaler.step(optimizer)
-                scaler.update()
-                optimizer.zero_grad()
-
-                if epoch + 1 >= swa_start_epoch:
-                    swa_model.update_parameters(model)
-                    swa_scheduler.step()
-                else:
-                    scheduler.step()
-
-    # Update BatchNorm (though DeBERTa uses LayerNorm)
-    torch.optim.swa_utils.update_bn(train_loader, swa_model, device=device)
-
-    swa_model.eval()
-    val_preds, test_preds = [], []
-    with torch.no_grad():
-        for batch in val_loader:
-            ids, mask, meta = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['meta'].to(
-                device)
-            with torch.cuda.amp.autocast():
-                pred = torch.sigmoid(swa_model(ids, mask, meta))
-            val_preds.append(pred.cpu().numpy())
-
-        for batch in test_loader:
-            ids, mask, meta = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['meta'].to(
-                device)
-            with torch.cuda.amp.autocast():
-                pred = torch.sigmoid(swa_model(ids, mask, meta))
-            test_preds.append(pred.cpu().numpy())
-
-    val_preds = np.vstack(val_preds)
-    test_preds = np.vstack(test_preds)
-
-    # Cleanup
-    del model, swa_model, optimizer, scheduler, swa_scheduler, train_loader
-    gc.collect()
+            scaler.step(optimizer)
+            scaler.update()
+            scheduler.step()
+            
+    def predict(loader):
+        model.eval()
+        preds = []
+        with torch.no_grad():
+            for batch in loader:
+                batch = [t.to(device) for t in batch]
+                ids, mask, cat, host, lens = batch
+                with autocast():
+                    logits = model(ids, mask, cat, host, lens)
+                preds.append(torch.sigmoid(logits).cpu().numpy())
+        return np.vstack(preds)
+    
+    val_preds = predict(val_loader)
+    test_preds = predict(test_loader)
+    
+    del model, optimizer, scheduler, train_loader, val_loader, test_loader
     torch.cuda.empty_cache()
-
+    gc.collect()
+    
     return val_preds, test_preds
 
+def train_dual_transformer(
+    X_train: X,
+    y_train: y,
+    X_val: X,
+    y_val: y,
+    X_test: X
+) -> Tuple[Predictions, Predictions]:
+    """
+    Executes sequential fine-tuning of RoBERTa and BERT.
+    Averages predictions for high-stability multi-label regression.
+    """
+    print("Execution Stage: train_dual_transformer")
+    seed_everything(42)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    
+    # 1. Train RoBERTa-base
+    r_val, r_test = train_single_backbone('roberta', X_train, y_train, X_val, X_test, device)
+    
+    # 2. Train BERT-base-uncased
+    b_val, b_test = train_single_backbone('bert', X_train, y_train, X_val, X_test, device)
+    
+    # 3. Ensemble (Simple Average)
+    val_preds = (r_val + b_val) / 2.0
+    test_preds = (r_test + b_test) / 2.0
+    
+    # Validation against NaNs
+    if np.isnan(val_preds).any() or np.isnan(test_preds).any():
+        raise ValueError("Predictions contain NaNs. Check learning rates and normalization.")
+        
+    print("Dual-transformer training complete. Predictions generated.")
+    return val_preds, test_preds
 
 # ===== Model Registry =====
 
-PREDICTION_ENGINES: Dict[str, PredictionFunction] = {
-    "deberta_v3_large_swa": train_deberta_v3_large_swa,
+PREDICTION_ENGINES: Dict[str, ModelFn] = {
+    "dual_transformer": train_dual_transformer,
 }

@@ -1,235 +1,134 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
 import os
-
-import numpy as np
 import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+from typing import Dict
 
-from create_features import create_features
-from cross_validation import cross_validation
-from ensemble import ensemble
-# Assume all component functions are available for import
+# Import all component functions
 from load_data import load_data
+from preprocess import preprocess
+from get_splitter import get_splitter
 from train_and_predict import PREDICTION_ENGINES
+from ensemble import ensemble
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/nomad2018-predict-transparent-conductors/prepared/public"
-OUTPUT_DATA_PATH = "output/2ea9a3e6-0185-40d8-bd93-7afe244a50a1/2/executor/output"
-
+# Path constants
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-12/evolux/output/mlebench/nomad2018-predict-transparent-conductors/prepared/public"
+OUTPUT_DATA_PATH = "output/3c8d5cca-ccb7-4c25-92f1-7d0f571dedc1/1/executor/output"
 
 def workflow() -> dict:
     """
-    Executes the complete machine learning workflow to generate the required deliverables.
-    This function orchestrates the entire pipeline, from data processing to model
-    training and evaluation. Its primary purpose is to produce and consolidate all
-    the final artifacts specified in the task description.
-
-    Returns:
-        dict: A dictionary containing all the deliverables required by the task 
-              description. It serves as a structured, serializable manifest of the results.
+    Orchestrates the complete end-to-end machine learning pipeline in production mode.
+    Ensures data robustness, performs feature selection, and executes cross-validated training.
     """
-    # Create output directory if it doesn't exist
+    print("Initializing production pipeline for NOMAD2018 task...")
+    
+    # 1. Load full dataset
+    # Requirement: MUST call load_data(validation_mode=False)
+    X_train_raw, y_train_raw, X_test_raw, test_ids = load_data(validation_mode=False)
+    
+    # 2. Data Robustness Fix
+    # Address the 'mat1 and mat2 shapes cannot be multiplied (1x0 and 3x3)' error
+    # This occurs in preprocess.py when atom_coords has an invalid shape.
+    def fix_atom_coords(x):
+        arr = np.asanyarray(x)
+        if arr.ndim == 2 and arr.shape[1] == 3:
+            return arr
+        try:
+            # Attempt to reshape any flattened or empty arrays into (N, 3)
+            return arr.reshape(-1, 3).astype(np.float32)
+        except Exception:
+            # Fallback to empty structure if data is fundamentally malformed
+            return np.zeros((0, 3), dtype=np.float32)
+
+    X_train_raw['atom_coords'] = X_train_raw['atom_coords'].apply(fix_atom_coords)
+    X_test_raw['atom_coords'] = X_test_raw['atom_coords'].apply(fix_atom_coords)
+    
+    # 3. Set up splitting strategy
+    splitter = get_splitter(X_train_raw, y_train_raw)
+    n_splits = splitter.get_n_splits()
+    
+    # Storage for Cross-Validation artifacts
+    model_name = "gbdt_ensemble"
+    train_fn = PREDICTION_ENGINES[model_name]
+    oof_preds = np.zeros((len(X_train_raw), 2))
+    test_preds_list = []
+    
+    # 4. Cross-Validation execution
+    for fold_idx, (train_idx, val_idx) in enumerate(splitter.split(X_train_raw, y_train_raw)):
+        print(f"\n--- Processing Fold {fold_idx + 1}/{n_splits} ---")
+        
+        # Partition data
+        X_tr, X_va = X_train_raw.iloc[train_idx], X_train_raw.iloc[val_idx]
+        y_tr, y_va = y_train_raw.iloc[train_idx], y_train_raw.iloc[val_idx]
+        
+        # Pipeline: Preprocessing
+        X_tr_p, y_tr_p, X_va_p, y_va_p, X_te_p = preprocess(
+            X_tr, y_tr, X_va, y_va, X_test_raw
+        )
+        
+        # Pipeline: Feature Selection (Technical Specification Requirement #3)
+        # Use a secondary model to identify and prune zero-importance features
+        print("  Evaluating feature importance for pruning...")
+        rf_selector = RandomForestRegressor(n_estimators=50, max_depth=10, n_jobs=-1, random_state=42)
+        # Target for selection: Mean log-transformed target values
+        y_target_log = np.log1p(np.maximum(0, y_tr_p.values)).mean(axis=1)
+        rf_selector.fit(X_tr_p, y_target_log)
+        
+        # Filter features with zero or near-zero importance to reduce noise
+        importance_threshold = 1e-7
+        keep_cols = X_tr_p.columns[rf_selector.feature_importances_ > importance_threshold]
+        print(f"  Feature Selection: {len(X_tr_p.columns)} -> {len(keep_cols)} features retained.")
+        
+        X_tr_p = X_tr_p[keep_cols]
+        X_va_p = X_va_p[keep_cols]
+        X_te_p = X_te_p[keep_cols]
+        
+        # Pipeline: Training and Prediction
+        val_p, test_p = train_fn(X_tr_p, y_tr_p, X_va_p, y_va_p, X_te_p)
+        
+        # Store results
+        oof_preds[val_idx] = val_p
+        test_preds_list.append(test_p)
+        
+    # 5. Aggregate predictions
+    # Calculate simple average of test predictions across folds
+    avg_test_preds = np.mean(test_preds_list, axis=0)
+    
+    # 6. Ensemble Module (Stage 5)
+    # Merges predictions in log-space using performance-based weighting
+    all_val_preds = {model_name: oof_preds}
+    all_test_preds = {model_name: avg_test_preds}
+    final_test_preds = ensemble(all_val_preds, all_test_preds, y_train_raw)
+    
+    # 7. Deliverable Generation
     os.makedirs(OUTPUT_DATA_PATH, exist_ok=True)
-
-    # Step 1: Load data
-    print("Step 1: Loading data...")
-    X, y, X_test, test_ids = load_data()
-    print(f"Training data shape: {X.shape}")
-    print(f"Test data shape: {X_test.shape}")
-    print(f"Target shape: {y.shape}")
-
-    # Step 2: Set up cross-validation strategy
-    print("\nStep 2: Setting up cross-validation...")
-    cv = cross_validation(X, y)
-
-    # Step 3: Initialize storage for predictions
-    print("\nStep 3: Initializing prediction storage...")
-    n_train = X.shape[0]
-    n_test = X_test.shape[0]
-    n_targets = y.shape[1]
-    target_columns = y.columns.tolist()
-
-    # Dictionary to store OOF predictions for each model
-    all_oof_preds = {}
-    # Dictionary to store test predictions for each model (list of fold predictions)
-    all_test_preds = {}
-
-    # Initialize storage for each model
-    for model_name in PREDICTION_ENGINES.keys():
-        all_oof_preds[model_name] = np.zeros((n_train, n_targets))
-        all_test_preds[model_name] = []
-
-    # Store transformed y for ensemble function
-    y_transformed_full = np.zeros((n_train, n_targets))
-
-    # Step 4: Cross-validation loop
-    print("\nStep 4: Running cross-validation...")
-    fold_scores = {model_name: [] for model_name in PREDICTION_ENGINES.keys()}
-
-    for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X, y)):
-        print(f"\n--- Fold {fold_idx + 1} ---")
-
-        # Step 4a: Split train/validation data
-        X_train_fold = X.iloc[train_idx].reset_index(drop=True)
-        y_train_fold = y.iloc[train_idx].reset_index(drop=True)
-        X_val_fold = X.iloc[val_idx].reset_index(drop=True)
-        y_val_fold = y.iloc[val_idx].reset_index(drop=True)
-        X_test_fold = X_test.reset_index(drop=True)
-
-        print(f"Train size: {len(train_idx)}, Validation size: {len(val_idx)}")
-
-        # Step 4b: Create features for training data
-        # The create_features function transforms X_train, y_train, and X_test
-        # We need to handle validation data separately
-        print("Creating features...")
-
-        # First, create features using training data as reference
-        X_train_transformed, y_train_transformed, X_test_transformed = create_features(
-            X_train_fold, y_train_fold, X_test_fold
-        )
-
-        # For validation, we need to transform it using the same approach
-        # We'll concatenate val with test temporarily to ensure consistent feature engineering
-        # Then extract the validation portion
-
-        # Create a combined dataset for validation transformation
-        # Use X_train_fold as reference for feature engineering on X_val_fold
-        X_val_transformed, y_val_transformed, _ = create_features(
-            X_train_fold, y_val_fold, X_val_fold
-        )
-
-        # The y_val_transformed is now log1p transformed
-        # X_val_transformed is the validation features (returned as the "test" output)
-        # We need to use the third return value which is the transformed X_val_fold
-
-        # Actually, looking at create_features more carefully:
-        # It returns (X_train_transformed, y_train_transformed, X_test_transformed)
-        # So for validation, we pass X_val_fold as X_test and get it back transformed
-
-        # Re-do this correctly:
-        # For validation features, we need to pass X_val_fold as the "test" set
-        _, y_val_transformed_temp, X_val_transformed = create_features(
-            X_train_fold, y_val_fold, X_val_fold
-        )
-
-        # y_val_transformed_temp is the log1p of y_val_fold
-        y_val_transformed = y_val_transformed_temp
-
-        # Store transformed y values for ensemble (in log space)
-        y_transformed_full[val_idx] = y_val_transformed.values
-
-        # Step 4c: Train each model
-        for model_name, train_fn in PREDICTION_ENGINES.items():
-            print(f"Training {model_name}...")
-
-            # Train and predict
-            val_preds, test_preds = train_fn(
-                X_train_transformed,
-                y_train_transformed,
-                X_val_transformed,
-                y_val_transformed,
-                X_test_transformed
-            )
-
-            # Store OOF predictions (in log space)
-            if isinstance(val_preds, pd.DataFrame):
-                all_oof_preds[model_name][val_idx] = val_preds.values
-            else:
-                all_oof_preds[model_name][val_idx] = np.array(val_preds)
-
-            # Append test predictions to list
-            all_test_preds[model_name].append(test_preds)
-
-            # Calculate fold RMSLE (in log space, this is RMSE)
-            val_preds_np = val_preds.values if isinstance(val_preds, pd.DataFrame) else np.array(val_preds)
-            y_val_np = y_val_transformed.values if isinstance(y_val_transformed, pd.DataFrame) else np.array(
-                y_val_transformed)
-
-            fold_rmse = np.sqrt(np.mean((val_preds_np - y_val_np) ** 2))
-            fold_scores[model_name].append(fold_rmse)
-            print(f"  {model_name} Fold {fold_idx + 1} RMSE (log space): {fold_rmse:.6f}")
-
-    # Step 5: Report mean CV scores
-    print("\n" + "=" * 50)
-    print("Step 5: Cross-validation Results")
-    print("=" * 50)
-
-    model_cv_scores = {}
-    for model_name, scores in fold_scores.items():
-        mean_score = np.mean(scores)
-        std_score = np.std(scores)
-        model_cv_scores[model_name] = float(mean_score)
-        print(f"{model_name}: Mean RMSE (log space) = {mean_score:.6f} (+/- {std_score:.6f})")
-
-    # Step 6 & 7: Ensemble predictions
-    print("\nStep 6 & 7: Ensembling predictions...")
-
-    # Convert OOF predictions to DataFrames
-    all_oof_preds_df = {}
-    for model_name, oof_preds in all_oof_preds.items():
-        all_oof_preds_df[model_name] = pd.DataFrame(oof_preds, columns=target_columns)
-
-    # Convert test predictions lists to proper format
-    all_test_preds_df = {}
-    for model_name, test_preds_list in all_test_preds.items():
-        all_test_preds_df[model_name] = [
-            pred if isinstance(pred, pd.DataFrame) else pd.DataFrame(pred, columns=target_columns)
-            for pred in test_preds_list
-        ]
-
-    # Create y_true_full DataFrame (in log space)
-    y_true_full = pd.DataFrame(y_transformed_full, columns=target_columns)
-
-    # Call ensemble function
-    final_predictions = ensemble(all_oof_preds_df, all_test_preds_df, y_true_full)
-
-    # Step 8: Create submission DataFrame
-    print("\nStep 8: Creating submission file...")
-
-    # Ensure predictions are non-negative
-    final_predictions = final_predictions.clip(lower=0)
-
-    # Create submission DataFrame
-    submission = pd.DataFrame({
-        'id': test_ids.values,
-        'formation_energy_ev_natom': final_predictions['formation_energy_ev_natom'].values,
-        'bandgap_energy_ev': final_predictions['bandgap_energy_ev'].values
+    submission_file_path = os.path.join(OUTPUT_DATA_PATH, "submission.csv")
+    
+    submission_df = pd.DataFrame({
+        'id': test_ids,
+        'formation_energy_ev_natom': final_test_preds[:, 0],
+        'bandgap_energy_ev': final_test_preds[:, 1]
     })
-
-    # Ensure id is integer
-    submission['id'] = submission['id'].astype(int)
-
-    # Step 9: Save submission file
-    submission_path = os.path.join(OUTPUT_DATA_PATH, "submission.csv")
-    submission.to_csv(submission_path, index=False)
-    print(f"Submission saved to: {submission_path}")
-    print(f"Submission shape: {submission.shape}")
-    print("\nSubmission preview:")
-    print(submission.head())
-    print("\nSubmission statistics:")
-    print(submission.describe())
-
-    # Calculate overall CV score (mean of both targets)
-    overall_cv_score = np.mean(list(model_cv_scores.values()))
-
-    # Create output info dictionary
+    submission_df.to_csv(submission_file_path, index=False)
+    
+    # 8. Execution Summary
     output_info = {
-        "submission_file_path": submission_path,
-        "model_scores": model_cv_scores,
-        "overall_cv_score": float(overall_cv_score),
-        "n_train_samples": int(n_train),
-        "n_test_samples": int(n_test),
-        "n_features": int(X.shape[1]),
-        "n_folds": 5,
-        "models_used": list(PREDICTION_ENGINES.keys()),
-        "target_columns": target_columns
+        "submission_file_path": submission_file_path,
+        "prediction_stats": {
+            "oof": {
+                "mean": float(np.mean(oof_preds)),
+                "std": float(np.std(oof_preds)),
+                "min": float(np.min(oof_preds)),
+                "max": float(np.max(oof_preds)),
+            },
+            "test": {
+                "mean": float(np.mean(final_test_preds)),
+                "std": float(np.std(final_test_preds)),
+                "min": float(np.min(final_test_preds)),
+                "max": float(np.max(final_test_preds)),
+            }
+        },
     }
-
-    print("\n" + "=" * 50)
-    print("Workflow completed successfully!")
-    print("=" * 50)
-    print(f"Overall CV Score (RMSE in log space): {overall_cv_score:.6f}")
-
+    
+    print(f"\nPipeline execution complete. Submission saved to: {submission_file_path}")
     return output_info

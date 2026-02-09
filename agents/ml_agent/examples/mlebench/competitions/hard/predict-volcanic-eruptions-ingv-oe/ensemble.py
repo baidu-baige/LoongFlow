@@ -1,72 +1,77 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-from typing import Any, Dict
-
 import numpy as np
+import pandas as pd
+from typing import Dict
+from sklearn.metrics import mean_absolute_error
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/predict-volcanic-eruptions-ingv-oe/prepared/public"
-OUTPUT_DATA_PATH = "output/43637237-1f49-4750-a868-8602ac177881/1/executor/output"
+# Task-adaptive type definitions
+y = pd.Series                # Target vector type (time_to_eruption)
+Predictions = np.ndarray     # Model predictions type (array of floats)
 
-# Type Definitions
-Features = Any  # Feature matrix (pd.DataFrame)
-Labels = Any  # Target labels (pd.Series or np.ndarray)
-Predictions = Any  # Model predictions (np.ndarray)
-
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-09/evolux/output/mlebench/predict-volcanic-eruptions-ingv-oe/prepared/public"
+OUTPUT_DATA_PATH = "output/bdc750a4-f0a3-4926-871d-f9675d7cf1ef/1/executor/output"
 
 def ensemble(
-    all_oof_preds: Dict[str, Predictions],
+    all_val_preds: Dict[str, Predictions],
     all_test_preds: Dict[str, Predictions],
-    y_true_full: Labels
+    y_val: y,
 ) -> Predictions:
     """
-    Combines predictions from multiple models into a final output using simple averaging.
-    
-    Args:
-        all_oof_preds (Dict[str, Predictions]): Dictionary mapping model names to their out-of-fold predictions.
-        all_test_preds (Dict[str, Predictions]): Dictionary mapping model names to their test predictions.
-        y_true_full (Labels): Ground truth labels, available for evaluation.
-        
-    Returns:
-        Predictions: Final ensemble test set predictions.
+    Combines predictions from multiple models into a final output using weighted average blending.
+    This stage aims to reduce variance and improve generalization for the MAE metric.
     """
+    model_names = list(all_test_preds.keys())
+    if not model_names:
+        raise ValueError("Ensemble received no predictions to combine.")
+
+    print(f"Ensemble: Starting consolidation of {len(model_names)} models: {model_names}")
+
     # Step 1: Evaluate individual model scores and prediction correlations
-    # This step is primarily for diagnostics. We propagate any errors in input consistency.
-    if not all_test_preds:
-        raise ValueError("The all_test_preds dictionary is empty. No predictions to ensemble.")
+    scores = {}
+    for name in model_names:
+        # Standard MAE evaluation as per competition requirements
+        mae = mean_absolute_error(y_val, all_val_preds[name])
+        scores[name] = mae
+        print(f"Ensemble Evaluation -> Model: {name:20} | Val MAE: {mae:.2f}")
 
-    # Step 2: Apply ensemble strategy
-    # Following the requirement: Simple average with equal weights.
-    # We aggregate all prediction arrays provided in all_test_preds.
-    test_preds_to_average = []
+    # Log correlations if multiple models are present to assess diversity
+    if len(model_names) > 1:
+        for i in range(len(model_names)):
+            for j in range(i + 1, len(model_names)):
+                n1, n2 = model_names[i], model_names[j]
+                corr = np.corrcoef(all_val_preds[n1], all_val_preds[n2])[0, 1]
+                print(f"Ensemble Correlation -> {n1} vs {n2}: {corr:.4f}")
 
-    for model_name, preds in all_test_preds.items():
-        # Check if the value is a list (e.g., individual fold predictions) or a single array
-        if isinstance(preds, (list, tuple)):
-            # If it's a list/tuple of arrays from multiple folds
-            if len(preds) == 0:
-                continue
-            test_preds_to_average.extend(preds)
-        else:
-            # If it's a single array (e.g., already averaged or a single model run)
-            test_preds_to_average.append(preds)
+    # Step 2: Apply ensemble strategy (Weighted Average Blending)
+    # The Technical Specification suggests [0.5, 0.5] weights initially.
+    # We implement a generalized weighted average that defaults to equal weights 
+    # unless specific performance-based weighting logic is required.
+    
+    if len(model_names) == 1:
+        print(f"Single model output detected: {model_names[0]}. Proceeding without blending.")
+        final_test_preds = all_test_preds[model_names[0]]
+    else:
+        # Define weights based on Technical Specification [0.5, 0.5]
+        # For N models, we use simple averaging (1/N) which generalizes the [0.5, 0.5] requirement.
+        weights = np.ones(len(model_names)) / len(model_names)
+        
+        # Initialize final prediction array with high precision
+        first_key = model_names[0]
+        final_test_preds = np.zeros_like(all_test_preds[first_key], dtype=np.float64)
+        
+        for i, name in enumerate(model_names):
+            # Accumulate weighted predictions
+            final_test_preds += weights[i] * all_test_preds[name].astype(np.float64)
+            
+        print(f"Successfully blended {len(model_names)} models with weights: {weights}")
 
-    if not test_preds_to_average:
-        raise ValueError("No valid prediction arrays found in all_test_preds.")
+    # Step 3: Final validation and cleanup
+    # Ensure the output is robust and conforms to downstream requirements
+    if np.isnan(final_test_preds).any() or np.isinf(final_test_preds).any():
+        raise ValueError("Ensemble produced invalid values (NaN/Inf). Evaluation aborted.")
 
-    # Stack predictions into a 2D array: (n_models_or_folds, n_samples)
-    # This will raise a ValueError if shapes are inconsistent, which is desired (propagate error).
-    stacked_preds = np.stack(test_preds_to_average)
+    # Ensure output shape matches test set size
+    assert len(final_test_preds) == len(all_test_preds[model_names[0]]), \
+        "Ensemble output size mismatch with input test predictions."
 
-    # Calculate the simple mean across the model/fold axis (axis=0)
-    # This implements the equal weighting (1/N) strategy.
-    final_test_preds = np.mean(stacked_preds, axis=0)
-
-    # Step 3: Return final test predictions
-    # Requirement: Output must NOT contain NaN or Infinity values.
-    if not np.isfinite(final_test_preds).all():
-        raise RuntimeError("Ensemble result contains non-finite values (NaN or Inf).")
-
+    print("Ensemble: Final prediction vector generated successfully.")
     return final_test_preds

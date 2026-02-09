@@ -1,100 +1,102 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
 import os
-
 import numpy as np
 import pandas as pd
-import torch
+from typing import Dict
 
-from create_features import create_features
-from cross_validation import cross_validation
-from ensemble import ensemble
+# Import all component functions
 from load_data import load_data
+from preprocess import preprocess
+from get_splitter import get_splitter
 from train_and_predict import PREDICTION_ENGINES
+from ensemble import ensemble
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/jigsaw-toxic-comment-classification-challenge/prepared/public"
-OUTPUT_DATA_PATH = "output/40d01db3-cd9d-46e2-8d9c-d192fb8addff/1/executor/output"
-
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-03/evolux/output/mlebench/jigsaw-toxic-comment-classification-challenge/prepared/public"
+OUTPUT_DATA_PATH = "output/4d08636e-bf37-40e0-b9d7-8ffb77d57ea2/1/executor/output"
 
 def workflow() -> dict:
     """
-    Orchestrates the complete end-to-end machine learning pipeline for the 
-    Jigsaw Toxic Comment Classification Challenge.
+    Orchestrates the complete end-to-end machine learning pipeline in production mode.
     """
-    # Create output directory if it doesn't exist
+    # Ensure the output directory exists
     os.makedirs(OUTPUT_DATA_PATH, exist_ok=True)
-
-    # 1. Load full dataset
-    X, y, X_test, test_ids = load_data(validation_mode=False)
-    target_cols = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
-
-    # 2. Set up cross-validation strategy
-    cv = cross_validation(X, y)
-
-    # Containers for predictions
-    # all_oof_preds: {model_name: oof_df}
-    # all_test_preds: {model_name: [fold1_test_preds, fold2_test_preds, ...]}
-    model_name = "bert_transformer"
-    all_test_preds = {model_name: []}
-
-    # Initialize OOF dataframe for the model
-    oof_preds = pd.DataFrame(np.zeros((len(X), len(target_cols))), index=X.index, columns=target_cols)
-
-    # 3. Cross-validation loop
-    for fold, (train_idx, val_idx) in enumerate(cv.split(X, y)):
-        # Split data for this fold
-        X_train_fold, X_val_fold = X.iloc[train_idx], X.iloc[val_idx]
-        y_train_fold, y_val_fold = y.iloc[train_idx], y.iloc[val_idx]
-
-        # a. Feature Engineering (Tokenization)
-        # Note: create_features uses the whole X_test in every fold which is standard for inference averaging
-        X_train_f, y_train_f, X_val_f, y_val_f, X_test_f = create_features(
-            X_train_fold, y_train_fold, X_val_fold, y_val_fold, X_test
-        )
-
-        # b. Train and Predict
-        # Using the bert_transformer engine
-        val_preds, test_preds = PREDICTION_ENGINES[model_name](
-            X_train_f, y_train_f, X_val_f, y_val_f, X_test_f
-        )
-
-        # c. Collect results
-        oof_preds.iloc[val_idx] = val_preds.values
-        all_test_preds[model_name].append(test_preds)
-
-        # Resource Management: Clear GPU cache between folds
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-    # Create dictionary for ensembling
-    all_oof_preds = {model_name: oof_preds}
-
-    # 4. Ensemble predictions
-    # This averages across folds for the BERT model (and potentially multiple models if defined)
-    final_test_preds = ensemble(all_oof_preds, all_test_preds, y)
-
-    # 5. Generate Submission File
-    submission = pd.DataFrame(index=test_ids.index)
-    submission['id'] = test_ids.values
-    for col in target_cols:
-        submission[col] = final_test_preds[col].values
-
+    
+    # 1. Load full dataset with load_data(validation_mode=False)
+    print("Step 1: Loading full dataset...")
+    X_train_full, y_train_full, X_test_full, test_ids = load_data(validation_mode=False)
+    
+    # 2. Set up data splitting strategy with get_splitter()
+    print("Step 2: Initializing data splitter...")
+    splitter = get_splitter(X_train_full, y_train_full)
+    
+    # Storage for cross-validation results
+    all_test_preds = {}
+    full_oof_preds = np.zeros(y_train_full.shape, dtype=np.float32)
+    full_oof_targets = y_train_full.values.astype(np.float32)
+    
+    # 3. For each fold:
+    num_splits = splitter.get_n_splits()
+    print(f"Step 3: Starting cross-validation training on {num_splits} folds...")
+    
+    for fold_idx, (train_idx, val_idx) in enumerate(splitter.split(X_train_full, y_train_full)):
+        print(f"\n--- Processing Fold {fold_idx + 1}/{num_splits} ---")
+        
+        # a. Split train/validation data
+        X_tr, X_val = X_train_full.iloc[train_idx], X_train_full.iloc[val_idx]
+        y_tr, y_val = y_train_full.iloc[train_idx], y_train_full.iloc[val_idx]
+        
+        # b. Apply preprocess() to this fold
+        print(f"Tokenizing data for Fold {fold_idx + 1}...")
+        X_tr_p, y_tr_p, X_val_p, y_val_p, X_te_p = preprocess(X_tr, y_tr, X_val, y_val, X_test_full)
+        
+        # c. Train each model and collect val + test predictions
+        # Using DeBERTa-v3 as the primary engine
+        print(f"Training DeBERTa-v3 for Fold {fold_idx + 1}...")
+        val_preds, test_preds = PREDICTION_ENGINES["deberta_v3"](X_tr_p, y_tr_p, X_val_p, y_val_p, X_te_p)
+        
+        # Store fold results
+        fold_name = f"fold_{fold_idx}"
+        all_test_preds[fold_name] = test_preds
+        full_oof_preds[val_idx] = val_preds
+        
+    # 4. Ensemble predictions from all models
+    # We pass the full OOF matrix as a single entry to the ensemble for scoring purposes,
+    # and all fold-wise test predictions for averaging.
+    print("\nStep 4: Performing ensemble averaging...")
+    all_val_preds_wrapper = {"OOF_Combined": full_oof_preds}
+    final_test_preds = ensemble(all_val_preds_wrapper, all_test_preds, full_oof_targets)
+    
+    # 5. Compute prediction statistics
+    print("Step 5: Calculating prediction statistics...")
+    prediction_stats = {
+        "oof": {
+            "mean": float(np.mean(full_oof_preds)),
+            "std": float(np.std(full_oof_preds)),
+            "min": float(np.min(full_oof_preds)),
+            "max": float(np.max(full_oof_preds)),
+        },
+        "test": {
+            "mean": float(np.mean(final_test_preds)),
+            "std": float(np.std(final_test_preds)),
+            "min": float(np.min(final_test_preds)),
+            "max": float(np.max(final_test_preds)),
+        }
+    }
+    
+    # 6. Generate deliverables (submission file)
+    print("Step 6: Generating final submission file...")
+    target_columns = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+    submission_df = pd.DataFrame(final_test_preds, columns=target_columns)
+    submission_df.insert(0, 'id', test_ids.values)
+    
     submission_file_path = os.path.join(OUTPUT_DATA_PATH, "submission.csv")
-    submission.to_csv(submission_file_path, index=False)
-
-    # 6. Calculate CV Score (Mean Column-wise ROC AUC)
-    from sklearn.metrics import roc_auc_score
-    cv_score = roc_auc_score(y.values, oof_preds.values, average='macro')
-
-    # Save artifacts and return metadata
+    submission_df.to_csv(submission_file_path, index=False)
+    
+    # 7. Save artifacts and return metadata
+    print(f"Workflow completed successfully. Submission saved to: {submission_file_path}")
+    
     output_info = {
         "submission_file_path": submission_file_path,
-        "model_scores": {model_name: float(cv_score)},
-        "n_folds": 5,
-        "status": "success"
+        "prediction_stats": prediction_stats,
     }
-
+    
     return output_info

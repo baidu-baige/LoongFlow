@@ -1,102 +1,95 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-import json
 import os
-from collections import Counter
+import pandas as pd
 from typing import Tuple
 
-import pandas as pd
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/2-05/evolux/output/mlebench/random-acts-of-pizza/prepared/public"
+OUTPUT_DATA_PATH = "output/f2dbb22d-a0cb-4add-aa87-f2c6b1a4b76f/77/executor/output"
 
-BASE_DATA_PATH = "/root/workspace/evolux-ml/output/mlebench/random-acts-of-pizza/prepared/public"
-OUTPUT_DATA_PATH = "output/ed330620-ed29-4387-b009-fed5bf45c1a8/11/executor/output"
+# Task-adaptive type definitions
+X = pd.DataFrame    # Feature matrix type
+y = pd.Series       # Target vector type
+Ids = pd.Series     # Identifier type for output alignment
 
-# For type hinting, DT is assumed to be pandas DataFrame or Series
-DT = pd.DataFrame | pd.Series
-
-
-def load_data(validation_mode: bool = False) -> Tuple[DT, DT, DT, DT]:
+def load_data(validation_mode: bool = False) -> Tuple[X, y, X, Ids]:
     """
-    Loads, splits, and returns the initial datasets.
-    
+    Loads and prepares the datasets for the Random Acts of Pizza task.
+    Filters features to include only those available at request time based on the test set schema.
+
     Args:
         validation_mode: Controls the data loading behavior.
-            - False (default): Load the complete dataset for actual training/inference.
-            - True: Load a small subset of data (≤50 rows) for quick code validation.
-
+            - False (default): Load the complete dataset.
+            - True: Return a subset (at most 200 rows) for quick validation.
     Returns:
-        Tuple[DT, DT, DT, DT]: A tuple containing four elements:
-        - X (DT): Training data features.
-        - y (DT): Training data labels.
-        - X_test (DT): Test data features.
-        - test_ids (DT): Identifiers for the test data.
+        Tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]: 
+        X_train, y_train, X_test, test_ids
     """
-    # Load training data
+    # Step 0: Define paths and verify existence
     train_path = os.path.join(BASE_DATA_PATH, "train.json")
-    with open(train_path, 'r') as f:
-        train_data = json.load(f)
-
-    # Load test data
     test_path = os.path.join(BASE_DATA_PATH, "test.json")
-    with open(test_path, 'r') as f:
-        test_data = json.load(f)
+    
+    if not os.path.exists(train_path):
+        raise FileNotFoundError(f"Critical Error: Training data not found at {train_path}")
+    if not os.path.exists(test_path):
+        raise FileNotFoundError(f"Critical Error: Test data not found at {test_path}")
 
-    # Convert to DataFrames
-    train_df = pd.DataFrame(train_data)
-    test_df = pd.DataFrame(test_data)
+    # Step 1: Load data from sources
+    print(f"Loading data from {BASE_DATA_PATH}...")
+    try:
+        # JSON files are ~12MB total; pandas handles this efficiently in memory
+        train_df = pd.read_json(train_path)
+        test_df = pd.read_json(test_path)
+    except Exception as e:
+        print(f"Failed to load JSON files: {e}")
+        raise
 
-    # Handle validation mode
+    # Step 2: Structure data into required return format
+    # The target column as per dataset description
+    target_col = 'requester_received_pizza'
+    id_col = 'request_id'
+
+    if target_col not in train_df.columns:
+        raise KeyError(f"Target column '{target_col}' not found in training data.")
+
+    # Restrict features to those available in the test set to prevent data leakage.
+    # The test set only contains fields available at the time of posting.
+    feature_cols = [col for col in test_df.columns if col != id_col]
+    
+    # Verify feature alignment
+    missing_cols = [col for col in feature_cols if col not in train_df.columns]
+    if missing_cols:
+        raise KeyError(f"Critical Error: Feature columns {missing_cols} missing from training data.")
+
+    # Extract features, target, and IDs
+    X_train = train_df[feature_cols].copy()
+    y_train = train_df[target_col].copy()
+    X_test = test_df[feature_cols].copy()
+    test_ids = test_df[id_col].copy()
+
+    # Set 'request_id' as index for the feature dataframes for easier tracking
+    X_train.index = train_df[id_col].values
+    X_test.index = test_df[id_col].values
+
+    # Step 3: Apply validation_mode subsetting if enabled
     if validation_mode:
-        # For training data, sample up to 50 rows while maintaining class balance
-        # Using 25 samples per class (as per EDA, classes are imbalanced)
-        train_df = train_df.groupby('requester_received_pizza', group_keys=False) \
-            .apply(lambda x: x.sample(min(len(x), 25), random_state=42)) \
-            .sample(frac=1, random_state=42) \
-            .head(50)
+        print("Validation mode enabled: subsetting to 200 samples.")
+        limit = 200
+        X_train = X_train.head(limit)
+        y_train = y_train.head(limit)
+        X_test = X_test.head(limit)
+        test_ids = test_ids.head(limit)
 
-        # For test data, just take the first 50 rows (no labels available)
-        test_df = test_df.head(50)
+    # Step 4: Final verification and return
+    if X_train.empty or y_train.empty or X_test.empty or test_ids.empty:
+        raise ValueError("Data loading produced empty datasets.")
+    
+    if len(X_train) != len(y_train):
+        raise ValueError(f"Training feature/target mismatch: {len(X_train)} vs {len(y_train)}")
+        
+    if len(X_test) != len(test_ids):
+        raise ValueError(f"Test feature/ID mismatch: {len(X_test)} vs {len(test_ids)}")
 
-    # Split training data into features and target
-    X = train_df.drop(columns=['requester_received_pizza'])
-    y = train_df['requester_received_pizza']
-
-    # Prepare test data
-    X_test = test_df.copy()
-    test_ids = test_df['request_id']
-
-    # Handle missing values in requester_user_flair (75% missing per EDA)
-    if 'requester_user_flair' in X.columns:
-        most_common_flair = Counter(X['requester_user_flair'].dropna()).most_common(1)[0][0]
-        X['requester_user_flair'].fillna(most_common_flair, inplace=True)
-        if 'requester_user_flair' in X_test.columns:
-            X_test['requester_user_flair'].fillna(most_common_flair, inplace=True)
-
-    # Convert unix timestamps to datetime (per EDA, these are highly correlated)
-    timestamp_cols = ['unix_timestamp_of_request', 'unix_timestamp_of_request_utc']
-    for col in timestamp_cols:
-        if col in X.columns:
-            X[col] = pd.to_datetime(X[col], unit='s')
-        if col in X_test.columns:
-            X_test[col] = pd.to_datetime(X_test[col], unit='s')
-
-    # Ensure column alignment between X and X_test
-    # Get intersection of columns (excluding target)
-    common_cols = list(set(X.columns) & set(X_test.columns))
-    X = X[common_cols]
-    X_test = X_test[common_cols]
-
-    # Ensure same column order (important for some models)
-    X_test = X_test[X.columns]
-
-    # Verify all return values are non-empty
-    assert len(X) > 0 and len(y) > 0 and len(X_test) > 0 and len(test_ids) > 0
-    # Verify row alignment
-    assert len(X) == len(y) and len(X_test) == len(test_ids)
-    # Verify column alignment
-    assert len(X.columns) == len(X_test.columns)
-    assert list(X.columns) == list(X_test.columns)
-
-    return X, y, X_test, test_ids
+    print(f"Data load completed successfully.")
+    print(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
+    print(f"X_test shape: {X_test.shape}, test_ids shape: {test_ids.shape}")
+    
+    return X_train, y_train, X_test, test_ids

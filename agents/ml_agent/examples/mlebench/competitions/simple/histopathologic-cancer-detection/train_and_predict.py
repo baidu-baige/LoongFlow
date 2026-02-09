@@ -1,218 +1,252 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
 import os
-from typing import Any, Callable, Dict, Tuple
-
-import cv2
-import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchvision.models as models
-import torchvision.transforms as transforms
-import torchvision.transforms.functional as TF
-from PIL import Image
-from sklearn.metrics import roc_auc_score
+import torch.distributed as dist
+import torch.multiprocessing as mp
 from torch.utils.data import DataLoader, Dataset
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+import numpy as np
+import pandas as pd
+import timm
+from typing import Tuple, Any, Dict, Callable, List
+import math
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
-BASE_DATA_PATH = "/root/workspace/evolux_ml/output/mlebench/histopathologic-cancer-detection/prepared/public"
-OUTPUT_DATA_PATH = "output/ee5d67f1-b3aa-447c-b45e-155ce5c4f09c/1/executor/output"
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/1-04/evolux/output/mlebench/histopathologic-cancer-detection/prepared/public"
+OUTPUT_DATA_PATH = "output/cf83edc4-8764-4cf8-95a0-4f4a823260c7/2/executor/output"
 
-# Type hints
-DT = pd.DataFrame | pd.Series | np.ndarray
-PredictionFunction = Callable[[DT, DT, DT, DT, DT, Any], Tuple[DT, DT]]
+# Task-adaptive type definitions
+X = pd.DataFrame
+y = pd.Series
+Predictions = np.ndarray
 
+# Model Function Type
+ModelFn = Callable[
+    [X, y, X, y, X],
+    Tuple[Predictions, Predictions]
+]
 
-# ===== Helper Functions for Transforms (Must be top-level for pickling) =====
+# ===== Dataset Implementation =====
 
-def rotate_90(x): return TF.rotate(x, 90)
-
-
-def rotate_180(x): return TF.rotate(x, 180)
-
-
-def rotate_270(x): return TF.rotate(x, 270)
-
-
-def identity(x): return x
-
-
-class HistopathDataset(Dataset):
-    """
-    PyTorch Dataset for loading histopathology images from paths in a DataFrame.
-    """
-
-    def __init__(self, df: pd.DataFrame, transform=None):
-        self.df = df.reset_index(drop=True)
+class CancerDataset(Dataset):
+    def __init__(self, images: List[np.ndarray], labels: np.ndarray = None, transform=None):
+        self.images = images
+        self.labels = labels
         self.transform = transform
 
     def __len__(self):
-        return len(self.df)
+        return len(self.images)
 
     def __getitem__(self, idx):
-        img_path = self.df.loc[idx, 'path']
-        image = cv2.imread(img_path)
-        if image is None:
-            raise FileNotFoundError(f"Image not found or corrupted: {img_path}")
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = Image.fromarray(image)
-
+        image = self.images[idx]
         if self.transform:
-            image = self.transform(image)
+            augmented = self.transform(image=image)
+            image = augmented['image']
+        
+        if self.labels is not None:
+            return image, torch.tensor(self.labels[idx], dtype=torch.float32), idx
+        return image, idx
 
-        label = self.df.loc[idx, 'label'] if 'label' in self.df.columns else 0
-        return image, torch.tensor(label, dtype=torch.float32)
+# ===== Model Implementation =====
 
-
-def get_transforms(mode: str = 'train'):
-    """
-    Defines the transformation pipeline for training and validation/test.
-    """
-    imagenet_mean = [0.485, 0.456, 0.406]
-    imagenet_std = [0.229, 0.224, 0.225]
-
-    if mode == 'train':
-        return transforms.Compose([
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomVerticalFlip(p=0.5),
-            # 90-degree rotations to avoid interpolation artifacts
-            transforms.RandomChoice([
-                transforms.Lambda(identity),
-                transforms.Lambda(rotate_90),
-                transforms.Lambda(rotate_180),
-                transforms.Lambda(rotate_270)
-            ]),
-            transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=imagenet_mean, std=imagenet_std)
-        ])
-    else:
-        return transforms.Compose([
-            transforms.Resize((96, 96)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=imagenet_mean, std=imagenet_std)
-        ])
-
-
-# ===== Training Functions =====
-
-def train_efficientnet_b0(
-    X_train: DT,
-    y_train: DT,
-    X_val: DT,
-    y_val: DT,
-    X_test: DT
-) -> Tuple[DT, DT]:
-    """
-    Trains an EfficientNet-B0 model and returns predictions for validation and test sets.
-    """
-    # 1. Setup Device and Data
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Prepare DataFrames for the Dataset class
-    train_df = X_train.copy()
-    train_df['label'] = y_train.values
-    val_df = X_val.copy()
-    val_df['label'] = y_val.values
-    test_df = X_test.copy()
-
-    train_dataset = HistopathDataset(train_df, transform=get_transforms('train'))
-    val_dataset = HistopathDataset(val_df, transform=get_transforms('val'))
-    test_dataset = HistopathDataset(test_df, transform=get_transforms('val'))
-
-    # Optimize batch size and workers for A10 GPU and 112-core CPU
-    batch_size = 128
-    num_workers = min(16, os.cpu_count() or 1)
-
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers,
-                              pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers,
-                             pin_memory=True)
-
-    # 2. Build Model
-    model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
-    num_ftrs = model.classifier[1].in_features
-    model.classifier[1] = nn.Linear(num_ftrs, 1)
-    model = model.to(device)
-
-    # 3. Configure Loss, Optimizer, and Scheduler
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-2)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=1)
-
-    # 4. Training Loop
-    num_epochs = 5
-    best_val_auc = 0.0
-    best_model_state = None
-
-    for epoch in range(num_epochs):
-        # Train phase
-        model.train()
-        for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device).unsqueeze(1)
-            optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-
-        # Validation phase
-        model.eval()
-        val_preds = []
-        val_targets = []
+class DualBackboneModel(nn.Module):
+    def __init__(self, model_names: List[str] = ["convnext_small.fb_in22k_ft_in1k", "swin_small_patch4_window7_224"]):
+        super().__init__()
+        # Pretrained models from timm. These are high-capacity and support 224x224 input.
+        self.backbone1 = timm.create_model(model_names[0], pretrained=True, num_classes=0)
+        self.backbone2 = timm.create_model(model_names[1], pretrained=True, num_classes=0)
+        
+        # Verify feature dimensions
         with torch.no_grad():
-            for images, labels in val_loader:
-                images = images.to(device)
+            dummy = torch.randn(1, 3, 224, 224)
+            f1 = self.backbone1(dummy).shape[1]
+            f2 = self.backbone2(dummy).shape[1]
+        
+        self.head = nn.Sequential(
+            nn.Linear(f1 + f2, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(512, 1)
+        )
+
+    def forward(self, x):
+        # Center patches are 96x96, interpolate to 224x224 for standard backbone input
+        if x.shape[-1] != 224:
+            x = nn.functional.interpolate(x, size=(224, 224), mode='bilinear', align_corners=False)
+        
+        feat1 = self.backbone1(x)
+        feat2 = self.backbone2(x)
+        combined = torch.cat([feat1, feat2], dim=1)
+        return self.head(combined)
+
+# ===== Training Worker =====
+
+def ddp_worker(rank: int, world_size: int, data_dict: Dict, return_dict: Dict):
+    """
+    Worker function for Distributed Data Parallel training.
+    """
+    try:
+        os.environ['MASTER_ADDR'] = 'localhost'
+        os.environ['MASTER_PORT'] = '12355'
+        dist.init_process_group("nccl", rank=rank, world_size=world_size)
+        torch.cuda.set_device(rank)
+        device = torch.device(f"cuda:{rank}")
+
+        # Datasets
+        train_ds = CancerDataset(data_dict['X_train_imgs'], data_dict['y_train_vals'], transform=data_dict['train_transform'])
+        val_ds = CancerDataset(data_dict['X_val_imgs'], data_dict['y_val_vals'], transform=data_dict['val_transform'])
+        test_ds = CancerDataset(data_dict['X_test_imgs'], transform=data_dict['val_transform'])
+
+        # Samplers & Loaders
+        train_sampler = DistributedSampler(train_ds, num_replicas=world_size, rank=rank, shuffle=True)
+        val_sampler = DistributedSampler(val_ds, num_replicas=world_size, rank=rank, shuffle=False)
+        test_sampler = DistributedSampler(test_ds, num_replicas=world_size, rank=rank, shuffle=False)
+
+        batch_size = 48
+        train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=train_sampler, num_workers=4, pin_memory=True)
+        val_loader = DataLoader(val_ds, batch_size=batch_size, sampler=val_sampler, num_workers=4, pin_memory=True)
+        test_loader = DataLoader(test_ds, batch_size=batch_size, sampler=test_sampler, num_workers=4, pin_memory=True)
+
+        model = DualBackboneModel().to(device)
+        model = DDP(model, device_ids=[rank])
+
+        optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.05)
+        num_epochs = 4
+        total_steps = len(train_loader) * num_epochs
+        
+        scheduler = optim.lr_scheduler.OneCycleLR(
+            optimizer, max_lr=1e-4, total_steps=total_steps, 
+            pct_start=0.1, anneal_strategy='cos'
+        )
+        criterion = nn.BCEWithLogitsLoss()
+
+        # Training Phase
+        for epoch in range(num_epochs):
+            train_sampler.set_epoch(epoch)
+            model.train()
+            for images, labels, _ in train_loader:
+                images, labels = images.to(device), labels.to(device).unsqueeze(1)
+                optimizer.zero_grad()
                 outputs = model(images)
-                probs = torch.sigmoid(outputs).cpu().numpy()
-                val_preds.extend(probs)
-                val_targets.extend(labels.numpy())
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
+                scheduler.step()
+            dist.barrier()
 
-        val_auc = roc_auc_score(val_targets, val_preds)
-        scheduler.step(val_auc)
+        # Inference Phase
+        def get_predictions(loader, tta_list=None):
+            model.eval()
+            active_ttas = tta_list if tta_list else [data_dict['val_transform']]
+            accum_p = None
+            final_i = None
+            
+            with torch.no_grad():
+                for t_idx, tta_tf in enumerate(active_ttas):
+                    loader.dataset.transform = tta_tf
+                    batch_probs = []
+                    batch_indices = []
+                    for batch_data in loader:
+                        # Handle potential label in batch_data
+                        if len(batch_data) == 3:
+                            images, _, idxs = batch_data
+                        else:
+                            images, idxs = batch_data
+                            
+                        images = images.to(device)
+                        outputs = torch.sigmoid(model(images))
+                        batch_probs.append(outputs.cpu().numpy())
+                        batch_indices.append(idxs.cpu().numpy())
+                    
+                    tta_p = np.concatenate(batch_probs)
+                    tta_i = np.concatenate(batch_indices)
+                    
+                    if t_idx == 0:
+                        accum_p = tta_p
+                        final_i = tta_i
+                    else:
+                        accum_p += tta_p
+                
+                accum_p /= len(active_ttas)
+            
+            # Gather results from all GPUs
+            gathered_p = [None for _ in range(world_size)]
+            gathered_i = [None for _ in range(world_size)]
+            dist.all_gather_object(gathered_p, accum_p)
+            dist.all_gather_object(gathered_i, final_i)
+            
+            if rank == 0:
+                full_p = np.concatenate(gathered_p)
+                full_i = np.concatenate(gathered_i)
+                # Re-sort and filter out DistributedSampler padding duplicates
+                unique_idx, first_idx = np.unique(full_i, return_index=True)
+                valid_mask = unique_idx < len(loader.dataset)
+                sorted_p = full_p[first_idx][np.argsort(unique_idx[valid_mask])]
+                return sorted_p.flatten()
+            return None
 
-        if val_auc > best_val_auc:
-            best_val_auc = val_auc
-            best_model_state = {k: v.cpu() for k, v in model.state_dict().items()}
+        val_res = get_predictions(val_loader)
+        test_res = get_predictions(test_loader, tta_list=data_dict['tta_transforms'])
 
-    # 5. Final Inference
-    if best_model_state is not None:
-        model.load_state_dict(best_model_state)
+        if rank == 0:
+            return_dict['val_preds'] = val_res
+            return_dict['test_preds'] = test_res
 
-    model.eval()
+    finally:
+        dist.destroy_process_group()
 
-    # Re-predict on validation set with best model
-    final_val_preds = []
-    with torch.no_grad():
-        for images, _ in val_loader:
-            images = images.to(device)
-            outputs = model(images)
-            probs = torch.sigmoid(outputs).cpu().numpy()
-            final_val_preds.extend(probs)
+# ===== Main Training Function =====
 
-    # Predict on test set
-    final_test_preds = []
-    with torch.no_grad():
-        for images, _ in test_loader:
-            images = images.to(device)
-            outputs = model(images)
-            probs = torch.sigmoid(outputs).cpu().numpy()
-            final_test_preds.extend(probs)
+def train_dual_backbone(
+    X_train: X,
+    y_train: y,
+    X_val: X,
+    y_val: y,
+    X_test: X
+) -> Tuple[Predictions, Predictions]:
+    """
+    Trains a Dual Backbone (ConvNeXt + Swin) ensemble using DDP across 4 GPUs.
+    Handles D4 symmetry via TTA and optimizes for AUC-ROC.
+    """
+    print(f"Initializing Dual Backbone Ensemble Training (ConvNeXt-S + Swin-S)...")
+    
+    # Prepare data dictionary for workers (avoiding pickling overhead in loops)
+    data_dict = {
+        'X_train_imgs': list(X_train['image'].values),
+        'y_train_vals': y_train.values.astype(np.float32),
+        'train_transform': X_train.attrs['transform'],
+        'X_val_imgs': list(X_val['image'].values),
+        'y_val_vals': y_val.values.astype(np.float32),
+        'val_transform': X_val.attrs['transform'],
+        'X_test_imgs': list(X_test['image'].values),
+        'tta_transforms': X_test.attrs['tta_transforms']
+    }
 
-    # Convert to numpy arrays and ensure flat shape
-    validation_predictions = np.array(final_val_preds).flatten()
-    test_predictions = np.array(final_test_preds).flatten()
-
-    # Final cleanup and return
-    return validation_predictions, test_predictions
-
+    world_size = torch.cuda.device_count()
+    if world_size < 1:
+        raise RuntimeError("No GPU available for DDP training.")
+    
+    manager = mp.Manager()
+    return_dict = manager.dict()
+    
+    print(f"Executing DDP Training across {world_size} GPUs...")
+    mp.spawn(ddp_worker, args=(world_size, data_dict, return_dict), nprocs=world_size, join=True)
+    
+    val_preds = return_dict.get('val_preds')
+    test_preds = return_dict.get('test_preds')
+    
+    if val_preds is None or test_preds is None:
+        raise RuntimeError("Training process failed to return valid predictions.")
+        
+    print("Dual Backbone training and inference completed successfully.")
+    return val_preds, test_preds
 
 # ===== Model Registry =====
-PREDICTION_ENGINES: Dict[str, PredictionFunction] = {
-    "efficientnet_b0": train_efficientnet_b0,
+
+PREDICTION_ENGINES: Dict[str, ModelFn] = {
+    "dual_backbone_ensemble": train_dual_backbone,
 }

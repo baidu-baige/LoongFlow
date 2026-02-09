@@ -1,140 +1,139 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
-import json
 import os
-import time
-
-import numpy as np
 import pandas as pd
+import numpy as np
+from scipy.stats import rankdata
 from sklearn.metrics import roc_auc_score
 
-from create_features import create_features
-from cross_validation import cross_validation
-from ensemble import ensemble
+# Import all component functions from the pipeline
 from load_data import load_data
+from preprocess import preprocess
+from get_splitter import get_splitter
 from train_and_predict import PREDICTION_ENGINES
+from ensemble import ensemble
 
-BASE_DATA_PATH = "/root/workspace/evolux-ml/output/mlebench/random-acts-of-pizza/prepared/public"
-OUTPUT_DATA_PATH = "output/ed330620-ed29-4387-b009-fed5bf45c1a8/11/executor/output"
-
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/2-05/evolux/output/mlebench/random-acts-of-pizza/prepared/public"
+OUTPUT_DATA_PATH = "output/f2dbb22d-a0cb-4add-aa87-f2c6b1a4b76f/77/executor/output"
 
 def workflow() -> dict:
     """
-    Executes the complete machine learning workflow to generate the required deliverables.
-    Returns a dictionary containing paths to artifacts and performance metrics.
+    Orchestrates the complete end-to-end machine learning pipeline in production mode.
+    Executes a 5-fold CV with integrated Pseudo-Labeling, Target Encoding, and a final 
+    deterministic heuristic override for known givers.
     """
-    # Create output directory if it doesn't exist
-    os.makedirs(OUTPUT_DATA_PATH, exist_ok=True)
+    # Step 0: Ensure output directory exists
+    if not os.path.exists(OUTPUT_DATA_PATH):
+        os.makedirs(OUTPUT_DATA_PATH, exist_ok=True)
 
-    # Start timer
-    start_time = time.time()
+    # Step 1: Load complete dataset (Production mode)
+    print("Workflow: Loading full dataset...")
+    X_train_raw, y_train_raw, X_test_raw, test_ids = load_data(validation_mode=False)
 
-    # 1. Load data
-    print("Loading data...")
-    X, y, X_test, test_ids = load_data(validation_mode=False)
+    # Step 2: Initialize data splitter (StratifiedKFold)
+    print("Workflow: Initializing data splitter...")
+    splitter = get_splitter(X_train_raw, y_train_raw)
+    n_splits = splitter.get_n_splits()
 
-    # 2. Set up cross-validation strategy
-    print("Setting up cross-validation...")
-    cv = cross_validation(X, y)
+    # Initialize containers for Out-of-Fold (OOF) and Test predictions
+    # PREDICTION_ENGINES contains the 'hybrid_pseudo_ensemble' engine
+    model_names = list(PREDICTION_ENGINES.keys())
+    oof_preds_dict = {name: np.zeros(len(y_train_raw)) for name in model_names}
+    test_preds_accum = {name: np.zeros(len(X_test_raw)) for name in model_names}
 
-    # 3. Initialize storage for predictions
-    all_oof_preds = {model_name: np.zeros(len(X)) for model_name in PREDICTION_ENGINES}
-    all_test_preds = {model_name: [] for model_name in PREDICTION_ENGINES}
-    fold_scores = {model_name: [] for model_name in PREDICTION_ENGINES}
+    # Step 3: Cross-Validation Loop
+    print(f"Workflow: Starting {n_splits}-fold cross-validation loop...")
+    for fold, (train_idx, val_idx) in enumerate(splitter.split(X_train_raw, y_train_raw)):
+        print(f"\n--- Processing Fold {fold + 1}/{n_splits} ---")
+        
+        # Split raw data for this fold
+        X_tr_fold, X_va_fold = X_train_raw.iloc[train_idx], X_train_raw.iloc[val_idx]
+        y_tr_fold, y_va_fold = y_train_raw.iloc[train_idx], y_train_raw.iloc[val_idx]
 
-    # 4. OUTER LOOP: for each fold
-    for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X, y)):
-        fold_start_time = time.time()
-        print(f"\n=== Processing Fold {fold_idx + 1}/{cv.get_n_splits()} ===")
+        # a. Preprocess data (Fold-wise to ensure zero leakage in Target Encoding and PCA)
+        X_tr_p, y_tr_p, X_va_p, y_va_p, X_te_p = preprocess(
+            X_tr_fold, y_tr_fold, X_va_fold, y_va_fold, X_test_raw
+        )
 
-        # Split train/validation data
-        X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-        y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
+        # b. Train each prediction engine (Hybrid DeBERTa + Pseudo-Labeled Tabular Models)
+        for name, train_fn in PREDICTION_ENGINES.items():
+            print(f"Executing training engine: {name}")
+            # train_fn returns (val_preds, test_preds) for this fold
+            val_preds, test_preds = train_fn(X_tr_p, y_tr_p, X_va_p, y_va_p, X_te_p)
+            
+            # Record OOF predictions for this fold's validation set
+            oof_preds_dict[name][val_idx] = val_preds
+            # Accumulate test predictions for later averaging
+            test_preds_accum[name] += test_preds / n_splits
 
-        # Call create_features() for this fold (only once per fold)
-        print("Creating features...")
-        X_train_fe, y_train_fe, X_val_fe = create_features(X_train, y_train, X_val)
-        _, _, X_test_fe = create_features(X_train, y_train, X_test)
+    # Step 4: Ensemble Stage (Rank-Weighted Averaging)
+    print("\nWorkflow: Executing Rank-Weighted Ensemble...")
+    # This applies rank normalization and integrates the Penta-Engine results
+    final_test_preds = ensemble(
+        all_val_preds=oof_preds_dict,
+        all_test_preds=test_preds_accum,
+        y_val=y_train_raw
+    )
 
-        # INNER LOOP: for each model
-        for model_name, prediction_func in PREDICTION_ENGINES.items():
-            print(f"\nTraining {model_name}...")
-            model_start_time = time.time()
+    # Step 5: Deterministic Heuristic Override
+    # "The 100% precision of giver_username_if_known != 'N/A' must be preserved"
+    print("Workflow: Applying deterministic override for known givers...")
+    if 'giver_username_if_known' in X_test_raw.columns:
+        giver_mask = (X_test_raw['giver_username_if_known'] != 'N/A').values
+        num_overrides = np.sum(giver_mask)
+        final_test_preds[giver_mask] = 1.0
+        print(f"Applied 1.0 probability override for {num_overrides} samples.")
+    else:
+        print("Warning: 'giver_username_if_known' not found in test features. Skipping override.")
 
-            # Train and predict
-            val_preds, test_preds = prediction_func(
-                X_train_fe, y_train_fe,
-                X_val_fe, y_val,
-                X_test_fe
-            )
+    # Step 6: Compute Final Statistics
+    print("Workflow: Computing prediction distribution statistics...")
 
-            # Store OOF predictions
-            all_oof_preds[model_name][val_idx] = val_preds
+    def get_rank_norm(preds: np.ndarray) -> np.ndarray:
+        """Helper to replicate ensemble.py rank-normalization for OOF stats."""
+        if len(preds) <= 1: return preds
+        return (rankdata(preds, method='average') - 1) / (len(preds) - 1)
 
-            # Store test predictions (append to list)
-            all_test_preds[model_name].append(test_preds)
+    # Replicate Rank-Weighted Averaging logic for OOF (Egalitarian fallback for engine names)
+    final_oof_preds = np.zeros(len(y_train_raw))
+    for name in oof_preds_dict.keys():
+        norm_ranks = get_rank_norm(oof_preds_dict[name])
+        final_oof_preds += (1.0 / len(oof_preds_dict)) * norm_ranks
 
-            # Calculate and store fold score
-            fold_score = roc_auc_score(y_val, val_preds)
-            fold_scores[model_name].append(fold_score)
-            print(f"{model_name} Fold {fold_idx + 1} AUC: {fold_score:.4f} "
-                  f"(Time: {time.time() - model_start_time:.1f}s)")
+    def calculate_stats(preds: np.ndarray) -> dict:
+        return {
+            "mean": float(np.mean(preds)),
+            "std": float(np.std(preds)),
+            "min": float(np.min(preds)),
+            "max": float(np.max(preds)),
+        }
 
-        print(f"Fold {fold_idx + 1} completed in {time.time() - fold_start_time:.1f} seconds")
+    prediction_stats = {
+        "oof": calculate_stats(final_oof_preds),
+        "test": calculate_stats(final_test_preds)
+    }
+    
+    # Calculate and print final OOF performance for monitoring
+    ensemble_auc = roc_auc_score(y_train_raw, final_oof_preds)
+    print(f"Final OOF Ensemble ROC-AUC: {ensemble_auc:.4f}")
 
-    # 5. Post-process results
-    # Calculate overall OOF scores and standard deviations
-    model_scores = {}
-    model_score_stds = {}
-    for model_name, oof_preds in all_oof_preds.items():
-        score = roc_auc_score(y, oof_preds)
-        std = np.std(fold_scores[model_name])
-        model_scores[model_name] = score
-        model_score_stds[model_name] = std
-        print(f"\n{model_name} Performance:")
-        print(f"  Overall OOF AUC: {score:.4f}")
-        print(f"  Fold AUCs: {fold_scores[model_name]}")
-        print(f"  Std Dev: {std:.4f}")
-
-    # Ensemble predictions
-    print("\nEnsembling predictions...")
-    final_test_preds = ensemble(all_oof_preds, all_test_preds, y)
-
-    # 6. Save artifacts
-    # Create submission file
+    # Step 7: Generate Submission File
+    print("Workflow: Generating final submission artifacts...")
     submission_df = pd.DataFrame({
-        'request_id': test_ids,
+        'request_id': test_ids.values,
         'requester_received_pizza': final_test_preds
     })
-    submission_path = os.path.join(OUTPUT_DATA_PATH, 'submission.csv')
-    submission_df.to_csv(submission_path, index=False)
+    
+    submission_file_path = os.path.join(OUTPUT_DATA_PATH, "submission.csv")
+    submission_df.to_csv(submission_file_path, index=False)
+    print(f"Submission saved successfully to: {submission_file_path}")
 
-    # Save model predictions and metrics
-    predictions_path = os.path.join(OUTPUT_DATA_PATH, 'predictions.json')
-    with open(predictions_path, 'w') as f:
-        json.dump({
-            'model_scores': model_scores,
-            'fold_scores': fold_scores,
-            'model_score_stds': model_score_stds
-        }, f, ensure_ascii=False, indent=2)
-
-    # 7. Create output dictionary
+    # Final Stage: Deliverables Collection
     output_info = {
-        'submission_file_path': submission_path,
-        'predictions_file_path': predictions_path,
-        'model_scores': model_scores,
-        'model_score_stds': model_score_stds,
-        'fold_scores': fold_scores,
-        'best_model': max(model_scores, key=model_scores.get),
-        'best_score': max(model_scores.values()),
-        'total_runtime_seconds': time.time() - start_time
+        "submission_file_path": submission_file_path,
+        "prediction_stats": prediction_stats,
     }
 
-    print("\nWorkflow completed successfully!")
-    print(f"Total runtime: {output_info['total_runtime_seconds']:.1f} seconds")
-    print(f"Best model: {output_info['best_model']} (AUC: {output_info['best_score']:.4f})")
-
+    print("Workflow execution completed successfully.")
     return output_info
+
+if __name__ == "__main__":
+    workflow()

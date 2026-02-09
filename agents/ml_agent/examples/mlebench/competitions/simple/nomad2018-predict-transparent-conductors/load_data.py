@@ -1,164 +1,116 @@
-# -*- coding: utf-8 -*-
-"""
-LLM Generated Code
-"""
-
+import pandas as pd
+import numpy as np
 import os
+from concurrent.futures import ProcessPoolExecutor
 from typing import Tuple
 
-import numpy as np
-import pandas as pd
+# Path constants
+BASE_DATA_PATH = "/mnt/pfs/loongflow/devmachine/h20-12/evolux/output/mlebench/nomad2018-predict-transparent-conductors/prepared/public"
+OUTPUT_DATA_PATH = "output/3c8d5cca-ccb7-4c25-92f1-7d0f571dedc1/1/executor/output"
 
-BASE_DATA_PATH = "/root/workspace/evolux/output/mlebench/nomad2018-predict-transparent-conductors/prepared/public"
-OUTPUT_DATA_PATH = "output/2ea9a3e6-0185-40d8-bd93-7afe244a50a1/2/executor/output"
+# Task-adaptive type definitions
+X = pd.DataFrame      # Feature matrix containing tabular and structural data
+y = pd.DataFrame      # Target vector for formation energy and bandgap
+Ids = pd.Series       # Identifiers for test set alignment
 
-# For type hinting, DT is assumed to be pandas DataFrame or Series
-DT = pd.DataFrame | pd.Series
-
-
-def load_data() -> Tuple[DT, DT, DT, DT]:
+def parse_xyz_file(file_path: str):
     """
-    Loads, splits, and returns the initial datasets.
-
-    This function takes no arguments as it should derive file paths from the task description
-    or predefined global variables.
-
-    Returns:
-        Tuple[DT, DT, DT, DT]: A tuple containing four elements:
-        - X (DT): Training data features.
-        - y (DT): Training data labels.
-        - X_test (DT): Test data features.
-        - test_ids (DT): Identifiers for the test data.
+    Parses a NOMAD2018 geometry.xyz file.
+    Extracts lattice vectors, 3D coordinates, and atomic species.
     """
-    # Load CSV files
-    train_csv_path = os.path.join(BASE_DATA_PATH, "train.csv")
-    test_csv_path = os.path.join(BASE_DATA_PATH, "test.csv")
-
-    train_df = pd.read_csv(train_csv_path)
-    test_df = pd.read_csv(test_csv_path)
-
-    def parse_geometry_file(file_path):
-        """Parse a geometry.xyz file and extract lattice vectors and atom positions."""
-        lattice_vectors = []
-        atoms = {'Al': [], 'Ga': [], 'In': [], 'O': []}
-
+    lattice = []
+    coords = []
+    species = []
+    try:
         with open(file_path, 'r') as f:
             for line in f:
-                line = line.strip()
-                if line.startswith('lattice_vector'):
-                    parts = line.split()
-                    # lattice_vector x y z
-                    vec = [float(parts[1]), float(parts[2]), float(parts[3])]
-                    lattice_vectors.append(vec)
-                elif line.startswith('atom'):
-                    parts = line.split()
-                    # atom x y z element
-                    x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
-                    element = parts[4]
-                    if element in atoms:
-                        atoms[element].append([x, y, z])
+                parts = line.split()
+                if not parts:
+                    continue
+                if parts[0] == 'lattice_vector':
+                    lattice.append([float(x) for x in parts[1:]])
+                elif parts[0] == 'atom':
+                    # Format: atom x y z symbol
+                    coords.append([float(x) for x in parts[1:4]])
+                    species.append(parts[4])
+    except Exception as e:
+        # Propagate error as per requirement
+        raise RuntimeError(f"Critical error parsing XYZ file at {file_path}: {e}")
+        
+    return {
+        'lattice': np.array(lattice, dtype=np.float32),
+        'coords': np.array(coords, dtype=np.float32),
+        'species': species
+    }
 
-        return lattice_vectors, atoms
+def load_data(validation_mode: bool = False) -> Tuple[X, y, X, Ids]:
+    """
+    Loads and prepares the NOMAD2018 dataset.
+    Combines tabular features from CSV files with atomic structures from XYZ files.
+    """
+    print(f"Initializing data load from {BASE_DATA_PATH}...")
+    
+    train_csv_path = os.path.join(BASE_DATA_PATH, "train.csv")
+    test_csv_path = os.path.join(BASE_DATA_PATH, "test.csv")
+    
+    # Verify core files exist
+    if not os.path.exists(train_csv_path) or not os.path.exists(test_csv_path):
+        raise FileNotFoundError("Primary data files (train.csv/test.csv) are missing.")
+        
+    # Load tabular data
+    train_df = pd.read_csv(train_csv_path)
+    test_df = pd.read_csv(test_csv_path)
+    
+    # Target columns as specified in the task
+    target_cols = ['formation_energy_ev_natom', 'bandgap_energy_ev']
+    
+    # Apply validation mode subsetting
+    if validation_mode:
+        train_df = train_df.head(200).copy()
+        test_df = test_df.head(200).copy()
+        print(f"Validation mode enabled: Loading subset of 200 rows.")
 
-    def extract_geometry_features(df, data_type='train'):
-        """Extract features from geometry files for all samples in dataframe."""
-        geometry_features = []
+    def enrich_with_structural_data(df, subset_name):
+        """Helper to parse and attach XYZ data to the dataframe in parallel."""
+        print(f"Loading structural geometry for {subset_name} subset...")
+        
+        # Construct paths for each ID
+        xyz_paths = [
+            os.path.join(BASE_DATA_PATH, subset_name, str(int(row['id'])), "geometry.xyz")
+            for _, row in df.iterrows()
+        ]
+        
+        # Verify first path as a sanity check before batch processing
+        if not os.path.exists(xyz_paths[0]):
+            raise FileNotFoundError(f"Missing XYZ geometry file: {xyz_paths[0]}")
+        
+        # Multi-core processing for efficiency (36 cores available)
+        with ProcessPoolExecutor(max_workers=32) as executor:
+            parsed_geometries = list(executor.map(parse_xyz_file, xyz_paths))
+        
+        # Map structural data back to the dataframe
+        df['lattice_matrix'] = [item['lattice'] for item in parsed_geometries]
+        df['atom_coords'] = [item['coords'] for item in parsed_geometries]
+        df['atom_species'] = [item['species'] for item in parsed_geometries]
+        return df
 
-        for idx, row in df.iterrows():
-            sample_id = int(row['id'])  # Ensure ID is an integer
-            geometry_path = os.path.join(BASE_DATA_PATH, data_type, str(sample_id), "geometry.xyz")
-
-            if not os.path.exists(geometry_path):
-                raise FileNotFoundError(f"Geometry file not found: {geometry_path}")
-
-            lattice_vectors, atoms = parse_geometry_file(geometry_path)
-
-            features = {}
-
-            # Lattice vector features
-            lattice_vectors = np.array(lattice_vectors)
-            if len(lattice_vectors) == 3:
-                # Compute lattice vector magnitudes
-                for i in range(3):
-                    features[f'lv{i + 1}_magnitude'] = np.linalg.norm(lattice_vectors[i])
-
-                # Compute volume using scalar triple product
-                volume = np.abs(np.dot(lattice_vectors[0], np.cross(lattice_vectors[1], lattice_vectors[2])))
-                features['cell_volume'] = volume
-
-                # Compute angles between lattice vectors
-                def angle_between(v1, v2):
-                    cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-                    cos_angle = np.clip(cos_angle, -1, 1)
-                    return np.degrees(np.arccos(cos_angle))
-
-                features['lv_angle_12'] = angle_between(lattice_vectors[0], lattice_vectors[1])
-                features['lv_angle_13'] = angle_between(lattice_vectors[0], lattice_vectors[2])
-                features['lv_angle_23'] = angle_between(lattice_vectors[1], lattice_vectors[2])
-
-            # Atom count features
-            for element in ['Al', 'Ga', 'In', 'O']:
-                features[f'n_{element}'] = len(atoms[element])
-
-            # Total atoms from geometry
-            features['total_atoms_geom'] = sum(len(atoms[e]) for e in atoms)
-
-            # Atom position statistics for each element
-            for element in ['Al', 'Ga', 'In', 'O']:
-                if len(atoms[element]) > 0:
-                    positions = np.array(atoms[element])
-                    # Mean position
-                    features[f'{element}_mean_x'] = np.mean(positions[:, 0])
-                    features[f'{element}_mean_y'] = np.mean(positions[:, 1])
-                    features[f'{element}_mean_z'] = np.mean(positions[:, 2])
-                    # Std of positions
-                    features[f'{element}_std_x'] = np.std(positions[:, 0])
-                    features[f'{element}_std_y'] = np.std(positions[:, 1])
-                    features[f'{element}_std_z'] = np.std(positions[:, 2])
-                    # Distance from origin statistics
-                    distances = np.linalg.norm(positions, axis=1)
-                    features[f'{element}_dist_mean'] = np.mean(distances)
-                    features[f'{element}_dist_std'] = np.std(distances)
-                    features[f'{element}_dist_min'] = np.min(distances)
-                    features[f'{element}_dist_max'] = np.max(distances)
-                else:
-                    features[f'{element}_mean_x'] = 0
-                    features[f'{element}_mean_y'] = 0
-                    features[f'{element}_mean_z'] = 0
-                    features[f'{element}_std_x'] = 0
-                    features[f'{element}_std_y'] = 0
-                    features[f'{element}_std_z'] = 0
-                    features[f'{element}_dist_mean'] = 0
-                    features[f'{element}_dist_std'] = 0
-                    features[f'{element}_dist_min'] = 0
-                    features[f'{element}_dist_max'] = 0
-
-            geometry_features.append(features)
-
-        return pd.DataFrame(geometry_features)
-
-    # Extract geometry features for train and test
-    train_geom_features = extract_geometry_features(train_df, 'train')
-    test_geom_features = extract_geometry_features(test_df, 'test')
-
-    # Merge geometry features with CSV data
-    train_merged = pd.concat([train_df.reset_index(drop=True), train_geom_features.reset_index(drop=True)], axis=1)
-    test_merged = pd.concat([test_df.reset_index(drop=True), test_geom_features.reset_index(drop=True)], axis=1)
-
-    # Define target columns
-    target_columns = ['formation_energy_ev_natom', 'bandgap_energy_ev']
-
-    # Extract targets
-    y = train_merged[target_columns]
-
-    # Define feature columns (exclude id and targets)
-    feature_columns = [col for col in train_merged.columns if col not in ['id'] + target_columns]
-
-    # Extract features
-    X = train_merged[feature_columns]
-    X_test = test_merged[feature_columns]
-
-    # Extract test ids
-    test_ids = test_merged['id']
-
-    return X, y, X_test, test_ids
+    # Data preparation (parsing XYZ)
+    train_df = enrich_with_structural_data(train_df, "train")
+    test_df = enrich_with_structural_data(test_df, "test")
+    
+    # Separate features and targets
+    y_train = train_df[target_cols].copy()
+    X_train = train_df.drop(columns=target_cols)
+    X_test = test_df.copy()
+    test_ids = test_df['id'].copy()
+    
+    # Row alignment checks
+    if len(X_train) != len(y_train):
+        raise ValueError(f"Training data alignment error: {len(X_train)} features vs {len(y_train)} targets.")
+    if len(X_test) != len(test_ids):
+        raise ValueError(f"Test data alignment error: {len(X_test)} features vs {len(test_ids)} IDs.")
+        
+    print(f"Data load successful.")
+    print(f"Train samples: {len(X_train)} | Test samples: {len(X_test)}")
+    
+    return X_train, y_train, X_test, test_ids
