@@ -118,7 +118,7 @@ _让创造更自由！LoongFlow，让你的经验轻松转化为专业的 AI 生
 | **领域**                                | **成果**                                                               | **示例**                                                                                               |
 | --------------------------------------- |----------------------------------------------------------------------| ------------------------------------------------------------------------------------------------------ |
 | **数学挑战 (Tao’s & AlphaEvolve sets)** | 在 11 个问题上超越了人类最佳成绩，在 7 个问题上超越了 AlphaEvolve 的成绩，达到了最新的 SOTA（最先进技术）水平。 | [Circle Packing](./agents/math_agent/examples/packing_circle_in_unit_square)                          |
-| **MLE-bench (Kaggle Challenges)**       | 经48项Kaggle竞赛验证，获得26枚金牌。                                              | [Stanford-Covid-Vaccine](./agents/ml_agent/examples/mlebench/competitions/hard/stanford-covid-vaccine) |
+| **MLE-bench (Kaggle Challenges)**       | 48项Kaggle竞赛获得奖牌，获得26枚金牌。                                             | <br/>[Stanford-Covid-Vaccine](./agents/ml_agent/examples/mlebench/competitions/hard/stanford-covid-vaccine) |
 
 </div>
 

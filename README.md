@@ -117,7 +117,7 @@ We believe that the key to designing an expert-level Agent capable of solving co
 | **Domain**                                             | **Achievement**                                                                                                                  | **Example**                                                                                            |
 | ------------------------------------------------------ |----------------------------------------------------------------------------------------------------------------------------------| ------------------------------------------------------------------------------------------------------ |
 | **Mathematical Challenges (Tao’s & AlphaEvolve sets)** | Outperformed the best human results on 11 problems and surpassed AlphaEvolve’s results on 7 problems, achieving the latest SOTA. | [Circle Packing](./agents/math_agent/examples/packing_circle_in_unit_square)                          |
-| **MLE-bench (Kaggle Challenges)**                      | Validated across 48 Kaggle competitions, securing 26 Gold Medals.                                                                | [Stanford-Covid-Vaccine](./agents/ml_agent/examples/mlebench/competitions/hard/stanford-covid-vaccine) |
+| **MLE-bench (Kaggle Challenges)**                      | Achieved medals across all 48 Kaggle competitions, including 26 Gold Medals.                                                                | [Stanford-Covid-Vaccine](./agents/ml_agent/examples/mlebench/competitions/hard/stanford-covid-vaccine) |
 
 </div>
 
@@ -346,7 +346,7 @@ Across 11 challenges in geometry and algebra, LoongFlow outperformed all known b
 | stanford-covid-vaccine | 🥇 Gold | [stanford-covid-vaccine](./agents/ml_agent/examples/mlebench/competitions/hard/stanford-covid-vaccine) |
 | vinbigdata-chest-xray-abnormalities-detection | 🥇 Gold | [vinbigdata-chest-xray-abnormalities-detection](./agents/ml_agent/examples/mlebench/competitions/hard/vinbigdata-chest-xray-abnormalities-detection) |
 
-Validated across 48 Kaggle competitions within the MLE-bench, securing 26 Gold Medals. The full results can be found at [competitions](./agents/ml_agent/examples/mlebench/competitions)
+Achieved medals across all 48 Kaggle competitions within the MLE-bench, including 26 Gold Medals. The full results can be found at [competitions](./agents/ml_agent/examples/mlebench/competitions)
 
 ### Others
 
