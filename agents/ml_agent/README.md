@@ -7,8 +7,7 @@ generation and iterative optimization.
 
 ## Benchmark Results
 
-We validate our framework on [MLE-Bench](https://github.com/openai/mle-bench), a benchmark of Kaggle-style ML
-competitions. Current results (see `examples/mlebench/competitions/`):
+We validate our framework on [MLE-Bench](https://github.com/openai/mle-bench), a benchmark of Kaggle-style ML competitions. Final results (see `examples/mlebench/competitions/`):
 
 | 🥇 Gold | 🥈 Silver | 🥉 Bronze |
 |:-------:|:---------:|:---------:|
