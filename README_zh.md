@@ -115,10 +115,10 @@ _让创造更自由！LoongFlow，让你的经验轻松转化为专业的 AI 生
 
 <div align="center">
 
-| **领域**                                | **成果**                                                                                                        | **示例**                                                                                               |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **领域**                                | **成果**                                                               | **示例**                                                                                               |
+| --------------------------------------- |----------------------------------------------------------------------| ------------------------------------------------------------------------------------------------------ |
 | **数学挑战 (Tao’s & AlphaEvolve sets)** | 在 11 个问题上超越了人类最佳成绩，在 7 个问题上超越了 AlphaEvolve 的成绩，达到了最新的 SOTA（最先进技术）水平。 | [Circle Packing](./agents/math_agent/examples/packing_circle_in_unit_square)                          |
-| **MLE-bench (Kaggle Challenges)**       | 经40项Kaggle竞赛验证，获得22枚金牌。                                                                            | [Stanford-Covid-Vaccine](./agents/ml_agent/examples/mlebench/competitions/hard/stanford-covid-vaccine) |
+| **MLE-bench (Kaggle Challenges)**       | 经48项Kaggle竞赛验证，获得26枚金牌。                                              | [Stanford-Covid-Vaccine](./agents/ml_agent/examples/mlebench/competitions/hard/stanford-covid-vaccine) |
 
 </div>
 
@@ -327,24 +327,36 @@ LoongFlow 引入了一种混合进化记忆系统：
 
 ### Kaggle机器学习竞赛
 
-| Problem                                         | LoongFlow Evolve Result | Details                                                                                                                                                    | Description                                                                            |
-| ----------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| aerial-cactus-identification                    | 🥇 Gold                 | [aerial-cactus-identification](./agents/ml_agent/examples/mlebench/competitions/simple/aerial-cactus-identification)                                       | 用无人机拍的照片，识别图片里有没有仙人掌，目标是训练AI自动找到沙漠里的仙人掌。         |
-| denoising-dirty-documents                       | 🥇 Gold                 | [denoising-dirty-documents](./agents/ml_agent/examples/mlebench/competitions/simple/denoising-dirty-documents)                                             | 把发黄、有污渍的老旧文件照片清理干净，目标是让扫描后的文字清晰可读。                   |
-| detecting-insults-in-social-commentary          | 🥇 Gold                 | [detecting-insults-in-social-commentary](./agents/ml_agent/examples/mlebench/competitions/simple/detecting-insults-in-social-commentary)                   | 识别社交媒体评论里有没有骂人的话，目标是自动过滤网络暴力内容。                         |
-| dogs-vs-cats-redux-kernels-edition              | 🥇 Gold                 | [dogs-vs-cats-redux-kernels-edition](./agents/ml_agent/examples/mlebench/competitions/simple/dogs-vs-cats-redux-kernels-edition)                           | 分类任务，把狗猫图片判别出来，目标是区分图片里是狗还是猫。                             |
-| histopathologic-cancer-detection                | 🥇 Gold                 | [histopathologic-cancer-detection](./agents/ml_agent/examples/mlebench/competitions/simple/histopathologic-cancer-detection)                               | 用AI看病理切片，判断有没有癌细胞，目标是帮助医生更快更准地诊断癌症。                   |
-| nomad2018-predict-transparent-conductors        | 🥇 Gold                 | [nomad2018-predict-transparent-conductors](./agents/ml_agent/examples/mlebench/competitions/simple/nomad2018-predict-transparent-conductors)               | 预测新材料能不能当透明导体用，目标是找到能导电又透明的材料，做手机屏幕、太阳能板啥的。 |
-| plant-pathology-2020-fgvc7                      | 🥇 Gold                 | [plant-pathology-2020-fgvc7](./agents/ml_agent/examples/mlebench/competitions/simple/plant-pathology-2020-fgvc7)                                           | 看苹果叶子照片，判断是健康还是有病，目标是帮农民及时发现病害，减少损失。               |
-| tabular-playground-series-dec-2021              | 🥇 Gold                 | [tabular-playground-series-dec-2021](./agents/ml_agent/examples/mlebench/competitions/simple/tabular-playground-series-dec-2021)                           | 给一堆数据，预测结果，这是Kaggle的入门练习赛，目标是练手学数据科学。                   |
-| the-icml-2013-whale-challenge-right-whale-redux | 🥇 Gold                 | [the-icml-2013-whale-challenge-right-whale-redux](./agents/ml_agent/examples/mlebench/competitions/simple/the-icml-2013-whale-challenge-right-whale-redux) | 看鲸鱼照片，认出是哪条鲸鱼，目标是保护濒危的露脊鲸。                                   |
-| google-quest-challenge                          | 🥇 Gold                 | [google-quest-challenge](./agents/ml_agent/examples/mlebench/competitions/medium/google-quest-challenge)                                                   | 给问答内容打标签，判断问题好坏和答案相关性，目标是提升问答系统的质量。                 |
-| plant-pathology-2021-fgvc8                      | 🥇 Gold                 | [plant-pathology-2021-fgvc8](./agents/ml_agent/examples/mlebench/competitions/medium/plant-pathology-2021-fgvc8)                                           | 通过苹果叶子照片判断有没有病害，目标是帮助农民及时发现植物疾病。                       |
-| us-patent-phrase-to-phrase-matching             | 🥇 Gold                 | [us-patent-phrase-to-phrase-matching](./agents/ml_agent/examples/mlebench/competitions/medium/us-patent-phrase-to-phrase-matching)                         | 判断两个专利短语的相似程度，目标是帮助专利审查员快速找到相关专利文件。                 |
-| predict-volcanic-eruptions-ingv-oe              | 🥇 Gold                 | [predict-volcanic-eruptions-ingv-oe](./agents/ml_agent/examples/mlebench/competitions/hard/predict-volcanic-eruptions-ingv-oe)                             | 分析火山传感器数据预测火山喷发时间，目标是帮助提前预警减少灾害损失。                   |
-| stanford-covid-vaccine                          | 🥇 Gold                 | [stanford-covid-vaccine](./agents/ml_agent/examples/mlebench/competitions/hard/stanford-covid-vaccine)                                                     | 预测RNA疫苗的稳定性，目标是设计出更稳定的新冠mRNA疫苗。                                |
+| Problem | LoongFlow Evolve Result | Details |
+| :--- | :--- | :--- |
+| aerial-cactus-identification | 🥇 Gold | [aerial-cactus-identification](./agents/ml_agent/examples/mlebench/competitions/simple/aerial-cactus-identification) |
+| aptos2019-blindness-detection | 🥇 Gold | [aptos2019-blindness-detection](./agents/ml_agent/examples/mlebench/competitions/simple/aptos2019-blindness-detection) |
+| denoising-dirty-documents | 🥇 Gold | [denoising-dirty-documents](./agents/ml_agent/examples/mlebench/competitions/simple/denoising-dirty-documents) |
+| detecting-insults-in-social-commentary | 🥇 Gold | [detecting-insults-in-social-commentary](./agents/ml_agent/examples/mlebench/competitions/simple/detecting-insults-in-social-commentary) |
+| dogs-vs-cats-redux-kernels-edition | 🥇 Gold | [dogs-vs-cats-redux-kernels-edition](./agents/ml_agent/examples/mlebench/competitions/simple/dogs-vs-cats-redux-kernels-edition) |
+| histopathologic-cancer-detection | 🥇 Gold | [histopathologic-cancer-detection](./agents/ml_agent/examples/mlebench/competitions/simple/histopathologic-cancer-detection) |
+| nomad2018-predict-transparent-conductors | 🥇 Gold | [nomad2018-predict-transparent-conductors](./agents/ml_agent/examples/mlebench/competitions/simple/nomad2018-predict-transparent-conductors) |
+| plant-pathology-2020-fgvc7 | 🥇 Gold | [plant-pathology-2020-fgvc7](./agents/ml_agent/examples/mlebench/competitions/simple/plant-pathology-2020-fgvc7) |
+| tabular-playground-series-dec-2021 | 🥇 Gold | [tabular-playground-series-dec-2021](./agents/ml_agent/examples/mlebench/competitions/simple/tabular-playground-series-dec-2021) |
+| the-icml-2013-whale-challenge-right-whale-redux | 🥇 Gold | [the-icml-2013-whale-challenge-right-whale-redux](./agents/ml_agent/examples/mlebench/competitions/simple/the-icml-2013-whale-challenge-right-whale-redux) |
+| chaii-hindi-and-tamil-question-answering | 🥇 Gold | [chaii-hindi-and-tamil-question-answering](./agents/ml_agent/examples/mlebench/competitions/medium/chaii-hindi-and-tamil-question-answering) |
+| google-quest-challenge | 🥇 Gold | [google-quest-challenge](./agents/ml_agent/examples/mlebench/competitions/medium/google-quest-challenge) |
+| hubmap-kidney-segmentation | 🥇 Gold | [hubmap-kidney-segmentation](./agents/ml_agent/examples/mlebench/competitions/medium/hubmap-kidney-segmentation) |
+| inaturalist-2019-fgvc6 | 🥇 Gold | [inaturalist-2019-fgvc6](./agents/ml_agent/examples/mlebench/competitions/medium/inaturalist-2019-fgvc6) |
+| learning-agency-lab-automated-essay-scoring-2 | 🥇 Gold | [learning-agency-lab-automated-essay-scoring-2](./agents/ml_agent/examples/mlebench/competitions/medium/learning-agency-lab-automated-essay-scoring-2) |
+| plant-pathology-2021-fgvc8 | 🥇 Gold | [plant-pathology-2021-fgvc8](./agents/ml_agent/examples/mlebench/competitions/medium/plant-pathology-2021-fgvc8) |
+| seti-breakthrough-listen | 🥇 Gold | [seti-breakthrough-listen](./agents/ml_agent/examples/mlebench/competitions/medium/seti-breakthrough-listen) |
+| tensorflow-speech-recognition-challenge | 🥇 Gold | [tensorflow-speech-recognition-challenge](./agents/ml_agent/examples/mlebench/competitions/medium/tensorflow-speech-recognition-challenge) |
+| us-patent-phrase-to-phrase-matching | 🥇 Gold | [us-patent-phrase-to-phrase-matching](./agents/ml_agent/examples/mlebench/competitions/medium/us-patent-phrase-to-phrase-matching) |
+| whale-categorization-playground | 🥇 Gold | [whale-categorization-playground](./agents/ml_agent/examples/mlebench/competitions/medium/whale-categorization-playground) |
+| 3d-object-detection-for-autonomous-vehicles | 🥇 Gold | [3d-object-detection-for-autonomous-vehicles](./agents/ml_agent/examples/mlebench/competitions/hard/3d-object-detection-for-autonomous-vehicles) |
+| iwildcam-2019-fgvc6 | 🥇 Gold | [iwildcam-2019-fgvc6](./agents/ml_agent/examples/mlebench/competitions/hard/iwildcam-2019-fgvc6) |
+| predict-volcanic-eruptions-ingv-oe | 🥇 Gold | [predict-volcanic-eruptions-ingv-oe](./agents/ml_agent/examples/mlebench/competitions/hard/predict-volcanic-eruptions-ingv-oe) |
+| rsna-miccai-brain-tumor-radiogenomic-classification | 🥇 Gold | [rsna-miccai-brain-tumor-radiogenomic-classification](./agents/ml_agent/examples/mlebench/competitions/hard/rsna-miccai-brain-tumor-radiogenomic-classification) |
+| stanford-covid-vaccine | 🥇 Gold | [stanford-covid-vaccine](./agents/ml_agent/examples/mlebench/competitions/hard/stanford-covid-vaccine) |
+| vinbigdata-chest-xray-abnormalities-detection | 🥇 Gold | [vinbigdata-chest-xray-abnormalities-detection](./agents/ml_agent/examples/mlebench/competitions/hard/vinbigdata-chest-xray-abnormalities-detection) |
 
-在MLE-bench评测集中40场kaggle机器学习赛事验证，取得22个金牌，完整结果将在完成全部赛事后公布。
+在MLE-bench评测集中, 48场kaggle机器学习赛事获奖，取得26个金牌，完整获奖结果见[competitions](./agents/ml_agent/examples/mlebench/competitions)
 
 ### 其他尝试
 

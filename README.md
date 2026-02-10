@@ -115,9 +115,9 @@ We believe that the key to designing an expert-level Agent capable of solving co
 <div align="center">
 
 | **Domain**                                             | **Achievement**                                                                                                                  | **Example**                                                                                            |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| ------------------------------------------------------ |----------------------------------------------------------------------------------------------------------------------------------| ------------------------------------------------------------------------------------------------------ |
 | **Mathematical Challenges (Tao’s & AlphaEvolve sets)** | Outperformed the best human results on 11 problems and surpassed AlphaEvolve’s results on 7 problems, achieving the latest SOTA. | [Circle Packing](./agents/math_agent/examples/packing_circle_in_unit_square)                          |
-| **MLE-bench (Kaggle Challenges)**                      | Validated across 40 Kaggle competitions, securing 22 Gold Medals.                                                                | [Stanford-Covid-Vaccine](./agents/ml_agent/examples/mlebench/competitions/hard/stanford-covid-vaccine) |
+| **MLE-bench (Kaggle Challenges)**                      | Validated across 48 Kaggle competitions, securing 26 Gold Medals.                                                                | [Stanford-Covid-Vaccine](./agents/ml_agent/examples/mlebench/competitions/hard/stanford-covid-vaccine) |
 
 </div>
 
@@ -317,24 +317,36 @@ Across 11 challenges in geometry and algebra, LoongFlow outperformed all known b
 
 ### MLE-bench (Kaggle Challenges)
 
-| Problem                                         | LoongFlow Evolve Result | Details                                                                                                                                                    |
-| ----------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| aerial-cactus-identification                    | 🥇 Gold                 | [aerial-cactus-identification](./agents/ml_agent/examples/mlebench/competitions/simple/aerial-cactus-identification)                                       |
-| denoising-dirty-documents                       | 🥇 Gold                 | [denoising-dirty-documents](./agents/ml_agent/examples/mlebench/competitions/simple/denoising-dirty-documents)                                             |
-| detecting-insults-in-social-commentary          | 🥇 Gold                 | [detecting-insults-in-social-commentary](./agents/ml_agent/examples/mlebench/competitions/simple/detecting-insults-in-social-commentary)                   |
-| dogs-vs-cats-redux-kernels-edition              | 🥇 Gold                 | [dogs-vs-cats-redux-kernels-edition](./agents/ml_agent/examples/mlebench/competitions/simple/dogs-vs-cats-redux-kernels-edition)                           |
-| histopathologic-cancer-detection                | 🥇 Gold                 | [histopathologic-cancer-detection](./agents/ml_agent/examples/mlebench/competitions/simple/histopathologic-cancer-detection)                               |
-| nomad2018-predict-transparent-conductors        | 🥇 Gold                 | [nomad2018-predict-transparent-conductors](./agents/ml_agent/examples/mlebench/competitions/simple/nomad2018-predict-transparent-conductors)               |
-| plant-pathology-2020-fgvc7                      | 🥇 Gold                 | [plant-pathology-2020-fgvc7](./agents/ml_agent/examples/mlebench/competitions/simple/plant-pathology-2020-fgvc7)                                           |
-| tabular-playground-series-dec-2021              | 🥇 Gold                 | [tabular-playground-series-dec-2021](./agents/ml_agent/examples/mlebench/competitions/simple/tabular-playground-series-dec-2021)                           |
-| the-icml-2013-whale-challenge-right-whale-redux | 🥇 Gold                 | [the-icml-2013-whale-challenge-right-whale-redux](./agents/ml_agent/examples/mlebench/competitions/simple/the-icml-2013-whale-challenge-right-whale-redux) |
-| google-quest-challenge                          | 🥇 Gold                 | [google-quest-challenge](./agents/ml_agent/examples/mlebench/competitions/medium/google-quest-challenge)                                                   |
-| plant-pathology-2021-fgvc8                      | 🥇 Gold                 | [plant-pathology-2021-fgvc8](./agents/ml_agent/examples/mlebench/competitions/medium/plant-pathology-2021-fgvc8)                                           |
-| us-patent-phrase-to-phrase-matching             | 🥇 Gold                 | [us-patent-phrase-to-phrase-matching](./agents/ml_agent/examples/mlebench/competitions/medium/us-patent-phrase-to-phrase-matching)                         |
-| predict-volcanic-eruptions-ingv-oe              | 🥇 Gold                 | [predict-volcanic-eruptions-ingv-oe](./agents/ml_agent/examples/mlebench/competitions/hard/predict-volcanic-eruptions-ingv-oe)                             |
-| stanford-covid-vaccine                          | 🥇 Gold                 | [stanford-covid-vaccine](./agents/ml_agent/examples/mlebench/competitions/hard/stanford-covid-vaccine)                                                     |
+| Problem | LoongFlow Evolve Result | Details |
+| :--- | :--- | :--- |
+| aerial-cactus-identification | 🥇 Gold | [aerial-cactus-identification](./agents/ml_agent/examples/mlebench/competitions/simple/aerial-cactus-identification) |
+| aptos2019-blindness-detection | 🥇 Gold | [aptos2019-blindness-detection](./agents/ml_agent/examples/mlebench/competitions/simple/aptos2019-blindness-detection) |
+| denoising-dirty-documents | 🥇 Gold | [denoising-dirty-documents](./agents/ml_agent/examples/mlebench/competitions/simple/denoising-dirty-documents) |
+| detecting-insults-in-social-commentary | 🥇 Gold | [detecting-insults-in-social-commentary](./agents/ml_agent/examples/mlebench/competitions/simple/detecting-insults-in-social-commentary) |
+| dogs-vs-cats-redux-kernels-edition | 🥇 Gold | [dogs-vs-cats-redux-kernels-edition](./agents/ml_agent/examples/mlebench/competitions/simple/dogs-vs-cats-redux-kernels-edition) |
+| histopathologic-cancer-detection | 🥇 Gold | [histopathologic-cancer-detection](./agents/ml_agent/examples/mlebench/competitions/simple/histopathologic-cancer-detection) |
+| nomad2018-predict-transparent-conductors | 🥇 Gold | [nomad2018-predict-transparent-conductors](./agents/ml_agent/examples/mlebench/competitions/simple/nomad2018-predict-transparent-conductors) |
+| plant-pathology-2020-fgvc7 | 🥇 Gold | [plant-pathology-2020-fgvc7](./agents/ml_agent/examples/mlebench/competitions/simple/plant-pathology-2020-fgvc7) |
+| tabular-playground-series-dec-2021 | 🥇 Gold | [tabular-playground-series-dec-2021](./agents/ml_agent/examples/mlebench/competitions/simple/tabular-playground-series-dec-2021) |
+| the-icml-2013-whale-challenge-right-whale-redux | 🥇 Gold | [the-icml-2013-whale-challenge-right-whale-redux](./agents/ml_agent/examples/mlebench/competitions/simple/the-icml-2013-whale-challenge-right-whale-redux) |
+| chaii-hindi-and-tamil-question-answering | 🥇 Gold | [chaii-hindi-and-tamil-question-answering](./agents/ml_agent/examples/mlebench/competitions/medium/chaii-hindi-and-tamil-question-answering) |
+| google-quest-challenge | 🥇 Gold | [google-quest-challenge](./agents/ml_agent/examples/mlebench/competitions/medium/google-quest-challenge) |
+| hubmap-kidney-segmentation | 🥇 Gold | [hubmap-kidney-segmentation](./agents/ml_agent/examples/mlebench/competitions/medium/hubmap-kidney-segmentation) |
+| inaturalist-2019-fgvc6 | 🥇 Gold | [inaturalist-2019-fgvc6](./agents/ml_agent/examples/mlebench/competitions/medium/inaturalist-2019-fgvc6) |
+| learning-agency-lab-automated-essay-scoring-2 | 🥇 Gold | [learning-agency-lab-automated-essay-scoring-2](./agents/ml_agent/examples/mlebench/competitions/medium/learning-agency-lab-automated-essay-scoring-2) |
+| plant-pathology-2021-fgvc8 | 🥇 Gold | [plant-pathology-2021-fgvc8](./agents/ml_agent/examples/mlebench/competitions/medium/plant-pathology-2021-fgvc8) |
+| seti-breakthrough-listen | 🥇 Gold | [seti-breakthrough-listen](./agents/ml_agent/examples/mlebench/competitions/medium/seti-breakthrough-listen) |
+| tensorflow-speech-recognition-challenge | 🥇 Gold | [tensorflow-speech-recognition-challenge](./agents/ml_agent/examples/mlebench/competitions/medium/tensorflow-speech-recognition-challenge) |
+| us-patent-phrase-to-phrase-matching | 🥇 Gold | [us-patent-phrase-to-phrase-matching](./agents/ml_agent/examples/mlebench/competitions/medium/us-patent-phrase-to-phrase-matching) |
+| whale-categorization-playground | 🥇 Gold | [whale-categorization-playground](./agents/ml_agent/examples/mlebench/competitions/medium/whale-categorization-playground) |
+| 3d-object-detection-for-autonomous-vehicles | 🥇 Gold | [3d-object-detection-for-autonomous-vehicles](./agents/ml_agent/examples/mlebench/competitions/hard/3d-object-detection-for-autonomous-vehicles) |
+| iwildcam-2019-fgvc6 | 🥇 Gold | [iwildcam-2019-fgvc6](./agents/ml_agent/examples/mlebench/competitions/hard/iwildcam-2019-fgvc6) |
+| predict-volcanic-eruptions-ingv-oe | 🥇 Gold | [predict-volcanic-eruptions-ingv-oe](./agents/ml_agent/examples/mlebench/competitions/hard/predict-volcanic-eruptions-ingv-oe) |
+| rsna-miccai-brain-tumor-radiogenomic-classification | 🥇 Gold | [rsna-miccai-brain-tumor-radiogenomic-classification](./agents/ml_agent/examples/mlebench/competitions/hard/rsna-miccai-brain-tumor-radiogenomic-classification) |
+| stanford-covid-vaccine | 🥇 Gold | [stanford-covid-vaccine](./agents/ml_agent/examples/mlebench/competitions/hard/stanford-covid-vaccine) |
+| vinbigdata-chest-xray-abnormalities-detection | 🥇 Gold | [vinbigdata-chest-xray-abnormalities-detection](./agents/ml_agent/examples/mlebench/competitions/hard/vinbigdata-chest-xray-abnormalities-detection) |
 
-Validated across 40 Kaggle competitions within the MLE-bench, securing 22 Gold Medals. The full results will be released upon the completion of all remaining competitions.
+Validated across 48 Kaggle competitions within the MLE-bench, securing 26 Gold Medals. The full results can be found at [competitions](./agents/ml_agent/examples/mlebench/competitions)
 
 ### Others
 
