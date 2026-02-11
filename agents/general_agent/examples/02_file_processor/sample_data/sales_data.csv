@@ -1,0 +1,101 @@
+date,product,category,price,quantity,customer_id
+2024-01-15,Laptop,Electronics,899.99,2,C1001
+2024-01-15,Mouse,Electronics,19.99,5,C1002
+2024-01-15,Keyboard,Electronics,49.99,3,C1003
+2024-01-16,Monitor,Electronics,299.99,1,C1004
+2024-01-16,USB Cable,Electronics,9.99,10,C1005
+2024-01-16,Headphones,Electronics,79.99,2,C1006
+2024-01-17,Webcam,Electronics,59.99,4,C1007
+2024-01-17,Laptop,Electronics,899.99,1,C1008
+2024-01-17,Desk Lamp,Furniture,24.99,6,C1009
+2024-01-18,Office Chair,Furniture,199.99,2,C1010
+2024-01-18,Standing Desk,Furniture,399.99,1,C1011
+2024-01-18,Mouse Pad,Electronics,12.99,8,C1012
+2024-01-19,Monitor Arm,Electronics,89.99,3,C1013
+2024-01-19,Cable Organizer,Electronics,14.99,7,C1014
+2024-01-19,Laptop Stand,Electronics,34.99,5,C1015
+2024-01-20,Wireless Mouse,Electronics,29.99,4,C1016
+2024-01-20,Mechanical Keyboard,Electronics,129.99,2,C1017
+2024-01-20,Bookshelf,Furniture,149.99,1,C1018
+2024-01-21,Desk Mat,Electronics,19.99,6,C1019
+2024-01-21,Monitor,Electronics,299.99,2,C1020
+2024-01-21,Laptop,Electronics,899.99,1,C1021
+2024-01-22,USB Hub,Electronics,24.99,5,C1022
+2024-01-22,Webcam,Electronics,59.99,3,C1023
+2024-01-22,Headphones,Electronics,79.99,4,C1024
+2024-01-23,Desk Lamp,Furniture,24.99,7,C1025
+2024-01-23,Office Chair,Furniture,199.99,1,C1026
+2024-01-23,Mouse,Electronics,19.99,8,C1027
+2024-01-24,Keyboard,Electronics,49.99,4,C1028
+2024-01-24,Monitor Arm,Electronics,89.99,2,C1029
+2024-01-24,Standing Desk,Furniture,399.99,1,C1030
+2024-01-25,USB Cable,Electronics,9.99,15,C1031
+2024-01-25,Mouse Pad,Electronics,12.99,10,C1032
+2024-01-25,Laptop Stand,Electronics,34.99,5,C1033
+2024-01-26,Wireless Mouse,Electronics,29.99,6,C1034
+2024-01-26,Cable Organizer,Electronics,14.99,9,C1035
+2024-01-26,Mechanical Keyboard,Electronics,129.99,3,C1036
+2024-01-27,Bookshelf,Furniture,149.99,2,C1037
+2024-01-27,Desk Mat,Electronics,19.99,7,C1038
+2024-01-27,Monitor,Electronics,299.99,1,C1039
+2024-01-28,USB Hub,Electronics,24.99,6,C1040
+2024-01-28,Laptop,Electronics,899.99,1,C1041
+2024-01-28,Headphones,Electronics,79.99,5,C1042
+2024-01-29,Webcam,Electronics,59.99,4,C1043
+2024-01-29,Desk Lamp,Furniture,24.99,8,C1044
+2024-01-29,Office Chair,Furniture,199.99,1,C1045
+2024-01-30,Mouse,Electronics,19.99,9,C1046
+2024-01-30,Keyboard,Electronics,49.99,5,C1047
+2024-01-30,Standing Desk,Furniture,399.99,1,C1048
+2024-01-31,Monitor Arm,Electronics,89.99,3,C1049
+2024-01-31,USB Cable,Electronics,9.99,12,C1050
+2024-02-01,Mouse Pad,Electronics,12.99,11,C1051
+2024-02-01,Laptop Stand,Electronics,34.99,4,C1052
+2024-02-01,Wireless Mouse,Electronics,29.99,7,C1053
+2024-02-02,Cable Organizer,Electronics,14.99,8,C1054
+2024-02-02,Mechanical Keyboard,Electronics,129.99,2,C1055
+2024-02-02,Bookshelf,Furniture,149.99,1,C1056
+2024-02-03,Desk Mat,Electronics,19.99,6,C1057
+2024-02-03,Monitor,Electronics,299.99,2,C1058
+2024-02-03,USB Hub,Electronics,24.99,5,C1059
+2024-02-04,Laptop,Electronics,899.99,1,C1060
+2024-02-04,Headphones,Electronics,79.99,4,C1061
+2024-02-04,Webcam,Electronics,59.99,3,C1062
+2024-02-05,Desk Lamp,Furniture,24.99,7,C1063
+2024-02-05,Office Chair,Furniture,199.99,2,C1064
+2024-02-05,Mouse,Electronics,19.99,10,C1065
+2024-02-06,Keyboard,Electronics,49.99,4,C1066
+2024-02-06,Standing Desk,Furniture,399.99,1,C1067
+2024-02-06,Monitor Arm,Electronics,89.99,2,C1068
+2024-02-07,USB Cable,Electronics,9.99,14,C1069
+2024-02-07,Mouse Pad,Electronics,12.99,9,C1070
+2024-02-07,Laptop Stand,Electronics,34.99,5,C1071
+2024-02-08,Wireless Mouse,Electronics,29.99,6,C1072
+2024-02-08,Cable Organizer,Electronics,14.99,8,C1073
+2024-02-08,Mechanical Keyboard,Electronics,129.99,3,C1074
+2024-02-09,Bookshelf,Furniture,149.99,1,C1075
+2024-02-09,Desk Mat,Electronics,19.99,7,C1076
+2024-02-09,Monitor,Electronics,299.99,1,C1077
+2024-02-10,USB Hub,Electronics,24.99,6,C1078
+2024-02-10,Laptop,Electronics,899.99,2,C1079
+2024-02-10,Headphones,Electronics,79.99,5,C1080
+2024-02-11,Webcam,Electronics,59.99,4,C1081
+2024-02-11,Desk Lamp,Furniture,24.99,8,C1082
+2024-02-11,Office Chair,Furniture,199.99,1,C1083
+2024-02-12,Mouse,Electronics,19.99,9,C1084
+2024-02-12,Keyboard,Electronics,49.99,5,C1085
+2024-02-12,Standing Desk,Furniture,399.99,1,C1086
+2024-02-13,Monitor Arm,Electronics,89.99,3,C1087
+2024-02-13,USB Cable,Electronics,9.99,13,C1088
+2024-02-13,Mouse Pad,Electronics,12.99,10,C1089
+2024-02-14,Laptop Stand,Electronics,34.99,4,C1090
+2024-02-14,Wireless Mouse,Electronics,29.99,7,C1091
+2024-02-14,Cable Organizer,Electronics,14.99,9,C1092
+2024-02-15,Mechanical Keyboard,Electronics,129.99,2,C1093
+2024-02-15,Bookshelf,Furniture,149.99,2,C1094
+2024-02-15,Desk Mat,Electronics,19.99,6,C1095
+2024-02-16,Monitor,Electronics,299.99,2,C1096
+2024-02-16,USB Hub,Electronics,24.99,5,C1097
+2024-02-16,Laptop,Electronics,899.99,1,C1098
+2024-02-17,Headphones,Electronics,79.99,4,C1099
+2024-02-17,Webcam,Electronics,59.99,3,C1100

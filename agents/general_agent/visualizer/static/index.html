@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>General Agent Dashboard</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <h1>🤖 General Agent Dashboard</h1>
+            <div class="header-actions">
+                <button id="refreshBtn" class="btn btn-primary">🔄 Refresh</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="container">
+            <!-- Task List Sidebar -->
+            <aside class="sidebar">
+                <h2>📋 Tasks</h2>
+                <div id="taskList" class="task-list">
+                    <div class="loading">Loading tasks...</div>
+                </div>
+            </aside>
+
+            <!-- Main Panel -->
+            <main class="main-panel">
+                <!-- Task Overview -->
+                <section id="taskOverview" class="section" style="display: none;">
+                    <div class="task-header">
+                        <h2 id="taskTitle">Task Name</h2>
+                        <div class="task-meta">
+                            <span class="badge" id="taskStatus">Status</span>
+                            <span id="taskIterations">0 iterations</span>
+                        </div>
+                    </div>
+
+                    <!-- Score Chart -->
+                    <div class="chart-container">
+                        <h3>📈 Score History</h3>
+                        <canvas id="scoreChart"></canvas>
+                    </div>
+
+                    <!-- Iterations Grid -->
+                    <div class="iterations-section">
+                        <h3>🔄 Iterations</h3>
+                        <div id="iterationsList" class="iterations-grid">
+                            <!-- Iteration cards will be inserted here -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Iteration Details -->
+                <section id="iterationDetails" class="section" style="display: none;">
+                    <div class="detail-header">
+                        <button id="backBtn" class="btn btn-secondary">← Back</button>
+                        <h2 id="iterationTitle">Iteration Details</h2>
+                    </div>
+
+                    <div class="detail-grid">
+                        <!-- Plan Section -->
+                        <div class="detail-card">
+                            <h3>📋 Plan</h3>
+                            <div id="planContent" class="content-box">
+                                <p class="empty">No plan available</p>
+                            </div>
+                        </div>
+
+                        <!-- Files Section -->
+                        <div class="detail-card">
+                            <h3>📁 Generated Files (<span id="filesCount">0</span>)</h3>
+                            <div id="filesList" class="files-list">
+                                <p class="empty">No files generated</p>
+                            </div>
+                        </div>
+
+                        <!-- Evaluation Section -->
+                        <div class="detail-card">
+                            <h3>✓ Evaluation</h3>
+                            <div id="evaluationContent" class="content-box">
+                                <p class="empty">No evaluation data</p>
+                            </div>
+                        </div>
+
+                        <!-- Summary Section -->
+                        <div class="detail-card">
+                            <h3>💡 Summary</h3>
+                            <div id="summaryContent" class="content-box">
+                                <p class="empty">No summary available</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Code Viewer Modal -->
+                <div id="codeViewer" class="modal" style="display: none;">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3 id="codeViewerTitle">File Viewer</h3>
+                            <button id="closeCodeViewer" class="btn btn-secondary">✕ Close</button>
+                        </div>
+                        <div class="modal-body">
+                            <pre id="codeViewerContent"><code></code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Welcome Screen -->
+                <section id="welcomeScreen" class="welcome">
+                    <div class="welcome-content">
+                        <h2>👋 Welcome to General Agent Visualizer</h2>
+                        <p>Select a task from the sidebar to view its progress and results.</p>
+                        <div class="welcome-features">
+                            <div class="feature">
+                                <span class="feature-icon">📊</span>
+                                <h4>Track Progress</h4>
+                                <p>Monitor iterations and score evolution</p>
+                            </div>
+                            <div class="feature">
+                                <span class="feature-icon">💻</span>
+                                <h4>View Code</h4>
+                                <p>Inspect generated files and implementations</p>
+                            </div>
+                            <div class="feature">
+                                <span class="feature-icon">📈</span>
+                                <h4>Analyze Results</h4>
+                                <p>Review evaluations and summaries</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- Chart.js for score visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+
+    <!-- Main application script -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

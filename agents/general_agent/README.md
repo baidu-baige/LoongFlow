@@ -31,21 +31,70 @@ export ANTHROPIC_BASE_URL="your-model-endpoint"
 ### 3. Run Example Task
 
 ```bash
-# Run hello_world example
-./run_general.sh hello_world
+# 🎯 NEW USER? Start with the beginner tutorial!
+./run_general.sh 01_todo_list
+
+# Or try the file processor example
+./run_general.sh 02_file_processor
 
 # Run in background
-./run_general.sh hello_world --background
+./run_general.sh 01_todo_list --background
 
 # Run with custom options
-./run_general.sh hello_world --log-level DEBUG --max-iterations 100
+./run_general.sh 01_todo_list --log-level DEBUG --max-iterations 50
 ```
+
+> 💡 **First time here?** Check out the [Complete Tutorial](TUTORIAL.md) - a comprehensive guide that walks you through all examples step by step!
 
 ### 4. Monitor Progress
 
 - **Foreground**: Output appears in terminal
-- **Background**: Check log file at `agents/general_agent/examples/hello_world/run.log`
-- **Stop background task**: `./run_general.sh stop hello_world`
+- **Background**: Check log file at `agents/general_agent/examples/01_todo_list/run.log`
+- **Stop background task**: `./run_general.sh stop 01_todo_list`
+
+---
+
+## 📖 Complete Tutorial
+
+**New to General Agent?** Follow our comprehensive step-by-step tutorial:
+
+👉 **[Complete Tutorial: Using General Agent](TUTORIAL.md)** 👈
+
+The tutorial covers:
+- ✅ **Level 1 (30 min)**: Your first agent - TODO list app
+- ✅ **Level 2 (45 min)**: Custom skills and multi-file projects
+- ✅ **Level 3 (60 min)**: Production-ready bug detection
+- ✅ **Creating your own tasks** from scratch
+- ✅ **Advanced techniques**: Multiple skills, custom evaluation, debugging
+- ✅ **Best practices** and troubleshooting
+
+**Perfect for**: Anyone wanting a structured, hands-on learning experience.
+
+---
+
+## 📚 Examples Gallery
+
+### 🎓 Quickstart Tutorials (Recommended for Beginners)
+
+Perfect for first-time users! These examples progressively introduce General Agent concepts:
+
+| Example | Time | Difficulty | What You'll Learn |
+|---------|------|------------|-------------------|
+| **[01_todo_list](examples/01_todo_list/)** | 5-10 min | ⭐ Beginner | Basic PES workflow, single-file projects |
+| **[02_file_processor](examples/02_file_processor/)** | 10-15 min | ⭐⭐ Intermediate | Custom skills, multi-file structure, data processing |
+| **[03_bug_hunter](examples/03_bug_hunter/)** | 15-20 min | ⭐⭐⭐ Advanced | Code analysis, bug detection, systematic debugging |
+| **[04_circle_packing](examples/04_circle_packing/)** | 20-30 min | ⭐⭐⭐⭐ Expert | Optimization algorithms, geometric constraints, advanced evaluation |
+
+**Start here**: Follow the [Complete Tutorial](TUTORIAL.md) for guided learning!
+
+### 🌟 Example Overview
+
+- **01_todo_list**: Build a command-line TODO app with persistent storage
+- **02_file_processor**: Create a CSV/JSON file processing system with custom skills
+- **03_bug_hunter**: Develop a bug detection agent with security scanning
+- **04_circle_packing**: Solve complex geometric optimization problems
+
+Each example demonstrates different aspects of General Agent capabilities and increasing complexity.
 
 ---
 
@@ -107,6 +156,146 @@ summarizers:
     skills: ["analysis", "reporting"]
     max_turns: 10
 ```
+
+---
+
+## 📊 Visualization
+
+**Real-time task monitoring** with interactive web dashboard:
+
+```bash
+# Launch visualization server
+python agents/general_agent/visualizer/visualizer.py \
+    --port 8080 \
+    --workspace ./output-todo-list
+
+# Or monitor multiple tasks
+python agents/general_agent/visualizer/visualizer.py \
+    --port 8080 \
+    --workspaces "output-todo-list,output-file-processor,output-bug-hunter"
+
+# Access dashboard
+open http://localhost:8080
+```
+
+**Features:**
+
+- 📈 **Score Evolution**: Track quality improvements across iterations
+- 🔄 **Iteration Browser**: Navigate through all iteration results
+- 💻 **File Viewer**: Inspect generated files with syntax highlighting
+- 📋 **Plan & Summary**: View planning and reflection insights
+- ✓ **Evaluation Details**: See test results and scores
+- 🔍 **Multi-file Support**: Browse complete project structures
+
+<figure align="center">
+<img src="../../assets/images/general_visualize.png" alt="General Agent Dashboard" width="100%"/>
+<figcaption><i>General Agent Dashboard showing task progress and iteration details</i></figcaption>
+</figure>
+
+---
+
+## 📊 Real-Time Visualization Dashboard
+
+The General Agent includes a powerful web-based visualizer for monitoring task progress, exploring iterations, and analyzing results in real-time.
+
+### Features
+
+- **📈 Score Evolution Tracking**: Dynamic charts showing performance improvement across iterations
+- **🔄 Iteration History**: Browse and compare all iterations with detailed metrics
+- **📝 Markdown Rendering**: Rich formatting for plans, summaries, and evaluation logs
+- **📁 Hierarchical File Tree**: Explore generated code with collapsible folder structure
+- **💻 Code Viewer**: Syntax-highlighted file content viewer
+- **🔄 Auto-Refresh**: Real-time updates as tasks execute
+
+### Quick Start
+
+Start the visualizer to monitor your task execution:
+
+```bash
+# Start visualizer for a single workspace
+python agents/general_agent/visualizer/visualizer.py --workspace ./output-todo-list
+
+# Monitor multiple workspaces simultaneously
+python agents/general_agent/visualizer/visualizer.py \
+  --workspaces "./output-todo-list,./output-file-processor,./output-bug-hunter"
+
+# Custom port and host
+python agents/general_agent/visualizer/visualizer.py \
+  --workspace ./output-todo-list \
+  --port 8080 \
+  --host 0.0.0.0
+```
+
+Then open your browser to `http://127.0.0.1:8080` to view the dashboard.
+
+### Dashboard Interface
+
+**Task List Sidebar**:
+- View all tasks across monitored workspaces
+- See iteration count and latest scores at a glance
+- Click any task to view detailed progress
+
+**Task Overview Panel**:
+- Score history chart with dynamic Y-axis scaling
+- Grid view of all iterations with scores and file counts
+- Click any iteration to explore details
+
+**Iteration Details View**:
+- **Plan**: Markdown-rendered planning document showing task decomposition
+- **Generated Files**: Hierarchical tree structure
+  - Click folders (📁) to expand/collapse
+  - Click files to view syntax-highlighted content
+- **Evaluation**: Detailed scoring and feedback logs
+- **Summary**: Insights and learnings from the iteration
+
+### Usage Examples
+
+**Monitor running task**:
+```bash
+# Terminal 1: Start your task
+./run_general.sh 01_todo_list
+
+# Terminal 2: Launch visualizer
+python agents/general_agent/visualizer/visualizer.py --workspace ./output-todo-list
+```
+
+**Analyze completed task**:
+```bash
+# View results after task completion
+python agents/general_agent/visualizer/visualizer.py --workspace ./output-bug-hunter
+```
+
+**Compare multiple tasks**:
+```bash
+# Monitor all example tasks together
+python agents/general_agent/visualizer/visualizer.py \
+  --workspaces "./output-todo-list,./output-file-processor,./output-bug-hunter,./output-circle-packing"
+```
+
+### Technical Details
+
+- **Backend**: Flask REST API serving task data
+- **Frontend**: Vanilla JavaScript with Chart.js and Marked.js
+- **Data Format**: Reads from General Agent's standard directory structure
+  - Task directories: UUID-based organization
+  - Iterations: Numeric subdirectories (1, 2, 3, ...)
+  - Evaluations: `executor/evaluator_dir/best_evaluation.json`
+  - Generated files: `executor/work_dir/`
+- **Auto-refresh**: Updates task details every 10 seconds when viewing
+
+### Troubleshooting
+
+**No tasks showing up**:
+- Ensure the workspace path points to the correct output directory
+- Check that task directories exist with iteration subdirectories
+
+**Score not displayed**:
+- Verify `executor/evaluator_dir/best_evaluation.json` exists in iteration folders
+- Check that JSON contains valid `score` field
+
+**Files not loading**:
+- Confirm `executor/work_dir/` directory exists in the iteration
+- Check file permissions
 
 ---
 
@@ -296,10 +485,10 @@ If you encounter issues:
 1. Check detailed error information in log files
 2. Verify configuration file format is correct
 3. Ensure environment variables are properly set
-4. Reference existing `hello_world` example for comparison
+4. Reference existing example configurations for comparison
 
 **Start your first task:**
 ```bash
 cd LoongFlow
-./run_general.sh hello_world
+./run_general.sh 01_todo_list
 ```

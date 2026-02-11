@@ -1,0 +1,140 @@
+# ============================================================================
+# File Processor - Quickstart Example 02
+# ============================================================================
+# This example teaches you how to work with custom skills and multi-file projects
+# Goal: Create a CSV data analyzer with statistics and reporting
+
+# Output directory for this task
+workspace_path: "./output-file-processor"
+
+# LLM Configuration
+llm_config:
+  model: "anthropic/deepseek-v3.2"
+
+# ------------------------------------------------------------------------------
+# Component Configuration with Custom Skill
+# ------------------------------------------------------------------------------
+
+# Planner: Uses the file-processing skill for better planning
+planners:
+  general_planner:
+    skills: ["file-processing"]  # 🎯 Load our custom skill!
+    permission_mode: "acceptEdits"
+    max_turns: 40
+
+# Executor: Also uses the skill for implementation guidance
+executors:
+  general_executor:
+    skills: ["file-processing"]
+    permission_mode: "acceptEdits"
+    max_turns: 40
+
+# Summarizer: Reflects on the implementation
+summarizers:
+  general_summarizer:
+    skills: []
+    permission_mode: "acceptEdits"
+    max_turns: 20
+
+# ------------------------------------------------------------------------------
+# Evolution Process Configuration
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description - building a more complex multi-file project
+  task: |
+    Create a CSV data analyzer application with the following features:
+
+    1. Project Structure:
+       - main.py: CLI entry point with argument parsing
+       - csv_reader.py: Read and parse CSV files
+       - data_analyzer.py: Calculate statistics (count, sum, average, min, max)
+       - report_generator.py: Generate formatted text reports
+       - config.py: Store constants and configurations
+
+    2. Core Functionality:
+       - Read CSV file with automatic header detection
+       - Validate data (check for required columns, handle missing values)
+       - Calculate statistics for numeric columns:
+         * Total count of rows
+         * Sum, average, min, max for each numeric column
+         * Count of missing values per column
+       - Generate a human-readable summary report
+
+    3. CLI Interface:
+       - Accept input CSV file path as argument
+       - Optional output file path (default: print to console)
+       - Optional --format flag (text or json)
+       - Display progress and status messages
+
+    4. Error Handling:
+       - Handle missing files gracefully
+       - Validate CSV format (check headers, column consistency)
+       - Provide clear error messages
+       - Continue processing even if some values are invalid
+
+    5. Example Usage:
+       ```bash
+       python main.py input.csv
+       python main.py input.csv --output report.txt
+       python main.py input.csv --output stats.json --format json
+       ```
+
+    6. Code Quality:
+       - Clean separation of concerns (one responsibility per file)
+       - Type hints for function parameters
+       - Docstrings for modules and functions
+       - Comprehensive error handling
+       - Easy to understand for intermediate developers
+
+    7. Sample Output:
+       ```
+       ═══════════════════════════════════════
+       CSV Data Analysis Report
+       ═══════════════════════════════════════
+       File: sales_data.csv
+       Total Rows: 150
+
+       Column Statistics:
+       ───────────────────────────────────────
+       [price]
+         Sum: 12,450.00
+         Average: 83.00
+         Min: 10.50
+         Max: 299.99
+         Missing: 3
+
+       [quantity]
+         Sum: 1,200
+         Average: 8
+         Min: 1
+         Max: 50
+         Missing: 0
+       ```
+
+    Use the file-processing skill guidance to structure your code properly.
+
+  # Component selection
+  planner_name: "general_planner"
+  executor_name: "general_executor"
+  summary_name: "general_summarizer"
+
+  # Evolution parameters
+  max_iterations: 50        # More iterations for complex task
+  target_score: 0.85
+  concurrency: 1
+
+  # Evaluator configuration
+  evaluator:
+    timeout: 600  # 10 minutes for testing
+    agent:
+      skills: ["file-processing"]
+      permission_mode: "acceptEdits"
+      max_turns: 30
+
+  # Database configuration
+  database:
+    storage_type: "in_memory"
+    num_islands: 1
+    population_size: 40
+    checkpoint_interval: 5
+    sampling_weight_power: 2

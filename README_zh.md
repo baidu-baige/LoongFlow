@@ -35,7 +35,7 @@ _让创造更自由！LoongFlow，让你的经验轻松转化为专业的 AI 生
     </a>       
 </p>
 
-[🚀 **Quick Start**](#快速开始) • [**Examples**](#相关示例) • [**Math-Agent**](./agents/math_agent) • [**ML-Agent**](./agents/ml_agent) • [**Discussions**](https://github.com/baidu-baige/LoongFlow/discussions)
+[🚀 **Quick Start**](#快速开始) • [**Examples**](#相关示例) • [**General-Agent**](./agents/general_agent) • [**Math-Agent**](./agents/math_agent) • [**ML-Agent**](./agents/ml_agent) • [**Discussions**](https://github.com/baidu-baige/LoongFlow/discussions)
 
 </div>
 
@@ -44,7 +44,22 @@ _让创造更自由！LoongFlow，让你的经验轻松转化为专业的 AI 生
 <table align="center" width="100%" style="border: none; table-layout: fixed;">
 <tr>
 
-<td width="33%" align="center" style="vertical-align: top; padding: 20px;">
+<td width="25%" align="center" style="vertical-align: top; padding: 20px;">
+<div style="height: 60px; display: flex; align-items: center; justify-content: center;">
+<h3 style="margin: 0; padding: 0;">💻 <strong>General-Agent</strong></h3>
+</div>
+<div align="center" style="margin: 10px 0;">
+  <img src="https://img.shields.io/badge/AGENT-general_agent-blue" alt="agent Badge" />
+</div>
+<div style="height: 60px; display: flex; align-items: center; justify-content: center;">
+<p align="center"><strong>通用编程智能体</strong></p>
+</div>
+<div style="height: 60px; display: flex; align-items: center; justify-content: center;">
+<p align="center"><strong>灵活</strong>、<strong>技能驱动</strong>，从简单应用到代码安全分析。</p>
+</div>
+</td>
+
+<td width="25%" align="center" style="vertical-align: top; padding: 20px;">
 <div style="height: 60px; display: flex; align-items: center; justify-content: center;">
 <h3 style="margin: 0; padding: 0;">🚀 <strong>Math-Agent</strong></h3>
 </div>
@@ -54,12 +69,12 @@ _让创造更自由！LoongFlow，让你的经验轻松转化为专业的 AI 生
 <div style="height: 60px; display: flex; align-items: center; justify-content: center;">
 <p align="center"><strong>数学专家智能体</strong></p>
 </div>
-<div style="height: 120px; display: flex; align-items: center; justify-content: center;">
-<p align="center"><strong>高效</strong>、<strong>稳定</strong>驱动高难数学题的算法设计和持续进化</p>
+<div style="height: 60px; display: flex; align-items: center; justify-content: center;">
+<p align="center"><strong>高效</strong>、<strong>稳定</strong>驱动高难数学题的算法设计和持续进化。</p>
 </div>
 </td>
 
-<td width="33%" align="center" style="vertical-align: top; padding: 20px;">
+<td width="25%" align="center" style="vertical-align: top; padding: 20px;">
 <div style="height: 60px; display: flex; align-items: center; justify-content: center;">
 <h3 style="margin: 0; padding: 0;">🔥 <strong>ML-Agent</strong></h3>
 </div>
@@ -69,25 +84,38 @@ _让创造更自由！LoongFlow，让你的经验轻松转化为专业的 AI 生
 <div style="height: 60px; display: flex; align-items: center; justify-content: center;">
 <p align="center"><strong>机器学习智能体</strong></p>
 </div>
-<div style="height: 120px; display: flex; align-items: center; justify-content: center;">
-<p align="center"><strong>全流程、全自主</strong>完整构建，持续进化突破</p>
+<div style="height: 60px; display: flex; align-items: center; justify-content: center;">
+<p align="center"><strong>全流程、全自主</strong>完整构建，持续进化突破。</p>
 </div>
+</td>
 
-</td>
-<td width="33%" align="center" style="vertical-align: top; padding: 20px;">
-<div style="height: 60px; display: flex; align-items: center; justify-content: center;">
-<h3 style="margin: 0; padding: 0;">⭐ <strong>LoongFlow</strong></h3>
-</div>
-<div align="center" style="margin: 10px 0;">
-  <img src="https://img.shields.io/badge/FRAMEWORK-LoongFlow-blue" alt="Backend Badge" />
-</div>
-<div style="height: 60px; display: flex; align-items: center; justify-content: center;">
-<p align="center"><strong>通用Agent框架</strong></p>
-</div>
-<div style="height: 120px; display: flex; align-items: center; justify-content: center;">
-<p align="center"><strong>会思考、会学习</strong>的专家级通用Agent开发框架</p>
-</div>
-</td>
+[//]: # (<td width="25%" align="center" style="vertical-align: top; padding: 20px;">)
+
+[//]: # (<div style="height: 60px; display: flex; align-items: center; justify-content: center;">)
+
+[//]: # (<h3 style="margin: 0; padding: 0;">⭐ <strong>LoongFlow</strong></h3>)
+
+[//]: # (</div>)
+
+[//]: # (<div align="center" style="margin: 10px 0;">)
+
+[//]: # (  <img src="https://img.shields.io/badge/FRAMEWORK-LoongFlow-blue" alt="Backend Badge" />)
+
+[//]: # (</div>)
+
+[//]: # (<div style="height: 60px; display: flex; align-items: center; justify-content: center;">)
+
+[//]: # (<p align="center"><strong>通用Agent框架</strong></p>)
+
+[//]: # (</div>)
+
+[//]: # (<div style="height: 60px; display: flex; align-items: center; justify-content: center;">)
+
+[//]: # (<p align="center"><strong>会思考、会学习</strong>的专家级通用Agent开发框架</p>)
+
+[//]: # (</div>)
+
+[//]: # (</td>)
 
 </tr>
 </table>
@@ -155,7 +183,36 @@ pip install -e .
 
 ### 运行示例
 
-#### Run Math Agent
+#### 运行 General Agent
+
+```bash
+# 配置 LLM: 编辑 task_config.yaml 或设置环境变量
+# 支持 Anthropic 兼容模型
+export ANTHROPIC_API_KEY="your-api-key"
+export ANTHROPIC_BASE_URL="your-endpoint"
+
+# 运行初学者示例 - TODO 列表应用 (5-10 分钟)
+./run_general.sh 01_todo_list
+
+# 运行中级示例 - 带自定义技能的文件处理器 (10-15 分钟)
+./run_general.sh 02_file_processor
+
+# 运行高级示例 - 带安全扫描的代码分析 (15-20 分钟)
+./run_general.sh 03_bug_hunter
+
+# 运行专家示例 - 圆形打包优化 (20-30 分钟)
+./run_general.sh 04_circle_packing --background
+
+# 检查任务日志 (后台任务)
+tail -f ./agents/general_agent/examples/04_circle_packing/run.log
+
+# 停止后台任务
+./run_general.sh stop 04_circle_packing
+
+# 📖 完整教程: 查看 agents/general_agent/TUTORIAL.md 获取详细指导
+```
+
+#### 运行 Math Agent
 
 ```bash
 # Config LLM: Edit task_config.yaml, recommend to use gemini-3-pro-preview or deepseek-r1-250528
@@ -178,7 +235,7 @@ tail -f ./agents/math_agent/examples/packing_circle_in_unit_square/run.log
 
 ```
 
-#### Run ML Agent
+#### 运行 ML Agent
 
 ```bash
 # Config LLM: Edit task_config.yaml, recommend to use gemini-3-pro-preview or deepseek-r1-250528
@@ -306,6 +363,25 @@ LoongFlow 引入了一种混合进化记忆系统：
 ## 相关示例
 
 ---
+
+### General Agent - 灵活的编程任务
+
+General Agent 展示了 LoongFlow 在软件开发任务中的多样性，通过技能驱动的演化：
+
+| 示例 | 难度 | 时间 | 功能说明 |
+| :--- | :--- | :--- | :--- |
+| [01_todo_list](./agents/general_agent/examples/01_todo_list) | ⭐ 初学者 | 5-10 分钟 | 构建带持久化存储的命令行 TODO 应用 |
+| [02_file_processor](./agents/general_agent/examples/02_file_processor) | ⭐⭐ 中级 | 10-15 分钟 | 使用自定义技能创建 CSV/JSON 处理器 |
+| [03_bug_hunter](./agents/general_agent/examples/03_bug_hunter) | ⭐⭐⭐ 高级 | 15-20 分钟 | 使用 OWASP/CWE 分析进行生产级代码检测 |
+| [04_circle_packing](./agents/general_agent/examples/04_circle_packing) | ⭐⭐⭐⭐ 专家 | 20-30 分钟 | 带自定义评估的几何优化 |
+
+**核心特性:**
+- 📚 **渐进式学习**: 通过 4 个示例从初学者到专家
+- 🎯 **自定义技能**: 领域知识包指导 Agent 行为
+- 🔧 **生产级工具**: 3 个真实的 Python 分析工具 (~1400 行代码)
+- 📖 **完整文档**: ~2250 行教程和指南
+
+👉 **开始使用**: 跟随 [完整教程](./agents/general_agent/TUTORIAL.md) 进行逐步学习
 
 ### 陶哲轩&AlphaEvolve发布数学挑战
 

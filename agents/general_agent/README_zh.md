@@ -111,6 +111,111 @@ summarizers:
 
 ---
 
+## 📊 实时可视化仪表板
+
+General Agent 包含了一个强大的 Web 可视化工具，用于实时监控任务进度、探索迭代历史和分析结果。
+
+### 功能特性
+
+- **📈 分数演化追踪**：动态图表展示各迭代间的性能改进
+- **🔄 迭代历史**：浏览和对比所有迭代的详细指标
+- **📝 Markdown 渲染**：对计划、总结和评估日志进行富文本格式化
+- **📁 层级文件树**：可折叠的文件夹结构探索生成的代码
+- **💻 代码查看器**：语法高亮的文件内容查看器
+- **🔄 自动刷新**：任务执行时实时更新数据
+
+### 快速开始
+
+启动可视化工具来监控你的任务执行：
+
+```bash
+# 监控单个工作空间
+python agents/general_agent/visualizer/visualizer.py --workspace ./output-todo-list
+
+# 同时监控多个工作空间
+python agents/general_agent/visualizer/visualizer.py \
+  --workspaces "./output-todo-list,./output-file-processor,./output-bug-hunter"
+
+# 自定义端口和主机
+python agents/general_agent/visualizer/visualizer.py \
+  --workspace ./output-todo-list \
+  --port 8080 \
+  --host 0.0.0.0
+```
+
+然后在浏览器中打开 `http://127.0.0.1:8080` 查看仪表板。
+
+### 仪表板界面
+
+**任务列表侧边栏**：
+- 查看所有被监控工作空间中的任务
+- 一目了然地查看迭代次数和最新分数
+- 点击任意任务查看详细进度
+
+**任务概览面板**：
+- 带动态 Y 轴缩放的分数历史图表
+- 显示所有迭代的网格视图，包含分数和文件数量
+- 点击任意迭代查看详情
+
+**迭代详情视图**：
+- **计划**：Markdown 渲染的规划文档，展示任务分解
+- **生成的文件**：层级树状结构
+  - 点击文件夹（📁）展开/折叠
+  - 点击文件查看语法高亮的内容
+- **评估**：详细的评分和反馈日志
+- **总结**：从该迭代中获得的洞察和学习
+
+### 使用示例
+
+**监控运行中的任务**：
+```bash
+# 终端 1：启动任务
+./run_general.sh 01_todo_list
+
+# 终端 2：启动可视化工具
+python agents/general_agent/visualizer/visualizer.py --workspace ./output-todo-list
+```
+
+**分析已完成的任务**：
+```bash
+# 任务完成后查看结果
+python agents/general_agent/visualizer/visualizer.py --workspace ./output-bug-hunter
+```
+
+**对比多个任务**：
+```bash
+# 一起监控所有示例任务
+python agents/general_agent/visualizer/visualizer.py \
+  --workspaces "./output-todo-list,./output-file-processor,./output-bug-hunter,./output-circle-packing"
+```
+
+### 技术细节
+
+- **后端**：Flask REST API 提供任务数据服务
+- **前端**：原生 JavaScript 配合 Chart.js 和 Marked.js
+- **数据格式**：读取 General Agent 的标准目录结构
+  - 任务目录：基于 UUID 的组织方式
+  - 迭代：数字子目录（1, 2, 3, ...）
+  - 评估结果：`executor/evaluator_dir/best_evaluation.json`
+  - 生成的文件：`executor/work_dir/`
+- **自动刷新**：查看任务时每 10 秒更新一次详情
+
+### 故障排除
+
+**没有显示任务**：
+- 确保工作空间路径指向正确的输出目录
+- 检查任务目录是否存在并包含迭代子目录
+
+**分数未显示**：
+- 验证迭代文件夹中是否存在 `executor/evaluator_dir/best_evaluation.json`
+- 检查 JSON 是否包含有效的 `score` 字段
+
+**文件无法加载**：
+- 确认迭代中存在 `executor/work_dir/` 目录
+- 检查文件权限
+
+---
+
 ## 🔧 Claude 技能系统
 
 ### 什么是技能？

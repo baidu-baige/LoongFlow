@@ -156,8 +156,14 @@ done
 COMMAND_ARRAY=(
   "python" "${MAIN_SCRIPT}"
   "--config" "${CONFIG_FILE}"
-  "${PYTHON_ARGS[@]}"
 )
+
+# Add --eval-file parameter if eval_program.py exists
+if [ -f "$EVAL_FILE" ]; then
+  COMMAND_ARRAY+=("--eval-file" "$EVAL_FILE")
+fi
+
+COMMAND_ARRAY+=("${PYTHON_ARGS[@]}")
 
 echo "✅ Checks passed. Preparing to run task: ${TASK_NAME}"
 echo "------------------------------------------------------------------"

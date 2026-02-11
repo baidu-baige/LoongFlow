@@ -27,15 +27,33 @@ def apply_llm_config(api_key: Optional[str], url: Optional[str]) -> None:
     Apply LLMConfig to environment variables for claude_agent_sdk.
 
     Args:
-        llm_config: LLMConfig from EvolveChainConfig
-    """
-    if api_key:
-        os.environ["ANTHROPIC_API_KEY"] = api_key
-        logger.debug("Set ANTHROPIC_API_KEY from config")
+        api_key: API key from LLMConfig. If None, check environment variable
+        url: Base URL from LLMConfig. If None, check environment variable
 
-    if url:
-        os.environ["ANTHROPIC_BASE_URL"] = url
-        logger.debug(f"Set ANTHROPIC_BASE_URL to: {url}")
+    Raises:
+        ValueError: If required API configuration is missing
+    """
+    # Handle API key
+    final_api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+    if not final_api_key:
+        raise ValueError(
+            "Missing required API key. "
+            "Set ANTHROPIC_API_KEY environment variable or provide in llm_config"
+        )
+
+    os.environ["ANTHROPIC_API_KEY"] = final_api_key
+    logger.debug(f"Set ANTHROPIC_API_KEY to: {final_api_key}")
+
+    # Handle base URL
+    final_url = url or os.getenv("ANTHROPIC_BASE_URL")
+    if not final_url:
+        raise ValueError(
+            "Missing required base URL. "
+            "Set ANTHROPIC_BASE_URL environment variable or provide in llm_config"
+        )
+
+    os.environ["ANTHROPIC_BASE_URL"] = final_url
+    logger.debug(f"Set ANTHROPIC_BASE_URL to: {final_url}")
 
 
 class ClaudeCodeAgent(AgentBase):
@@ -378,8 +396,6 @@ class ClaudeCodeAgent(AgentBase):
             f"query_preview: {input_query[:100] + '...' if len(input_query) > 100 else input_query}, "
             f"tool_count: {len(self.tool_list) + len(self.custom_tools)}"
         )
-
-        self.logger.info(f"[Claude Agent] options: {self.options}")
 
         try:
             # Use ClaudeSDKClient for better connection management

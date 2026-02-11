@@ -32,7 +32,7 @@ Enable Agents to think and learn through the PES paradigm, and accumulate experi
     </a>       
 </p>
 
-[🚀 **Quick Start**](#quick-start) • [**Examples**](#loongflow-examples) • [**Math-Agent**](./agents/math_agent) • [**ML-Agent**](./agents/ml_agent) • [**Discussions**](https://github.com/baidu-baige/LoongFlow/discussions)
+[🚀 **Quick Start**](#quick-start) • [**Examples**](#loongflow-examples) • [**Math-Agent**](./agents/math_agent) • [**ML-Agent**](./agents/ml_agent) • [**General-Agent**](./agents/general_agent) • [**Discussions**](https://github.com/baidu-baige/LoongFlow/discussions)
 
 </div>
 
@@ -41,7 +41,23 @@ Enable Agents to think and learn through the PES paradigm, and accumulate experi
 <table align="center" width="100%" style="border: none; table-layout: fixed;">
 <tr>
 
-<td width="33%" align="center" style="vertical-align: top; padding: 20px;">
+
+<td width="25%" align="center" style="vertical-align: top; padding: 20px;">
+<div style="height: 60px; display: flex; align-items: center; justify-content: center;">
+<h3 style="margin: 0; padding: 0;">💻 <strong>General-Agent</strong></h3>
+</div>
+<div align="center" style="margin: 10px 0;">
+  <img src="https://img.shields.io/badge/AGENT-general_agent-blue" alt="agent Badge" />
+</div>
+<div style="height: 60px; display: flex; align-items: center; justify-content: center;">
+<p align="center"><strong>General Purpose Agent</strong></p>
+</div>
+<div style="height: 60px; display: flex; align-items: center; justify-content: center;">
+<p align="center"><strong>Flexible</strong>, <strong>skill-driven</strong> coding tasks from simple apps to bug hunting.</p>
+</div>
+</td>
+
+<td width="25%" align="center" style="vertical-align: top; padding: 20px;">
 <div style="height: 60px; display: flex; align-items: center; justify-content: center;">
 <h3 style="margin: 0; padding: 0;">🚀 <strong>Math-Agent</strong></h3>
 </div>
@@ -49,14 +65,14 @@ Enable Agents to think and learn through the PES paradigm, and accumulate experi
   <img src="https://img.shields.io/badge/AGENT-math_agent-blue" alt="agent Badge" />
 </div>
 <div style="height: 60px; display: flex; align-items: center; justify-content: center;">
-<p align="center"><strong>Math Problem Agent </strong></p>
+<p align="center"><strong>Math Problem Agent</strong></p>
 </div>
 <div style="height: 60px; display: flex; align-items: center; justify-content: center;">
-<p align="center"><strong>Efficient</strong>,<strong>stable</strong> driving of math algorithm design and continuous evolution.</p>
+<p align="center"><strong>Efficient</strong>, <strong>stable</strong> driving of math algorithm design and continuous evolution.</p>
 </div>
 </td>
 
-<td width="30%" align="center" style="vertical-align: top; padding: 20px;">
+<td width="25%" align="center" style="vertical-align: top; padding: 20px;">
 <div style="height: 60px; display: flex; align-items: center; justify-content: center;">
 <h3 style="margin: 0; padding: 0;">🔥 <strong>ML-Agent</strong></h3>
 </div>
@@ -67,24 +83,37 @@ Enable Agents to think and learn through the PES paradigm, and accumulate experi
 <p align="center"><strong>Machine Learning Agent</strong></p>
 </div>
 <div style="height: 60px; display: flex; align-items: center; justify-content: center;">
-<p align="center"><strong>Full-process</strong>,<strong>autonomous</strong> construction and continuous evolutionary breakthrough.</p>
+<p align="center"><strong>Full-process</strong>, <strong>autonomous</strong> construction and continuous evolutionary breakthrough.</p>
 </div>
+</td>
 
-</td>
-<td width="30%" align="center" style="vertical-align: top; padding: 20px;">
-<div style="height: 60px; display: flex; align-items: center; justify-content: center;">
-<h3 style="margin: 0; padding: 0;">⭐ <strong>LoongFlow</strong></h3>
-</div>
-<div align="center" style="margin: 10px 0;">
-  <img src="https://img.shields.io/badge/FRAMEWORK-LoongFlow-blue" alt="Backend Badge" />
-</div>
-<div style="height: 60px; display: flex; align-items: center; justify-content: center;">
-<p align="center"><strong>Universal Agent Framework</strong></p>
-</div>
-<div style="height: 60px; display: flex; align-items: center; justify-content: center;">
-<p align="center">A Universal Agent Framework for <strong>Expert-Grade</strong> AI Productivity.</p>
-</div>
-</td>
+[//]: # (<td width="25%" align="center" style="vertical-align: top; padding: 20px;">)
+
+[//]: # (<div style="height: 60px; display: flex; align-items: center; justify-content: center;">)
+
+[//]: # (<h3 style="margin: 0; padding: 0;">⭐ <strong>LoongFlow</strong></h3>)
+
+[//]: # (</div>)
+
+[//]: # (<div align="center" style="margin: 10px 0;">)
+
+[//]: # (  <img src="https://img.shields.io/badge/FRAMEWORK-LoongFlow-blue" alt="Backend Badge" />)
+
+[//]: # (</div>)
+
+[//]: # (<div style="height: 60px; display: flex; align-items: center; justify-content: center;">)
+
+[//]: # (<p align="center"><strong>Universal Agent Framework</strong></p>)
+
+[//]: # (</div>)
+
+[//]: # (<div style="height: 60px; display: flex; align-items: center; justify-content: center;">)
+
+[//]: # (<p align="center">A Universal Agent Framework for <strong>Expert-Grade</strong> AI Productivity.</p>)
+
+[//]: # (</div>)
+
+[//]: # (</td>)
 
 </tr>
 </table>
@@ -153,6 +182,35 @@ pip install -e .
 ```
 
 ### Run Examples
+
+#### Run General Agent
+
+```bash
+# Config LLM: Edit task_config.yaml or set environment variables
+# Supports Anthropic-compatible models
+export ANTHROPIC_API_KEY="your-api-key"
+export ANTHROPIC_BASE_URL="your-endpoint"
+
+# Run beginner example - TODO list app (5-10 minutes)
+./run_general.sh 01_todo_list
+
+# Run intermediate example - File processor with custom skills (10-15 minutes)
+./run_general.sh 02_file_processor
+
+# Run advanced example - Bug hunter with security scanning (15-20 minutes)
+./run_general.sh 03_bug_hunter
+
+# Run expert example - Circle packing optimization (20-30 minutes)
+./run_general.sh 04_circle_packing --background
+
+# Check task log (for background tasks)
+tail -f ./agents/general_agent/examples/04_circle_packing/run.log
+
+# Stop background task
+./run_general.sh stop 04_circle_packing
+
+# 📖 Complete Tutorial: See agents/general_agent/TUTORIAL.md for step-by-step guide
+```
 
 #### Run Math Agent
 
@@ -296,6 +354,26 @@ This allows agents to perform **jump-style reasoning** — leveraging past disco
 ## LoongFlow Examples
 
 ---
+
+
+### General Agent - Flexible Coding Tasks
+
+General Agent demonstrates LoongFlow's versatility in software development tasks with skill-driven evolution:
+
+| Example | Difficulty | Time | What It Does |
+| :--- | :--- | :--- | :--- |
+| [01_todo_list](./agents/general_agent/examples/01_todo_list) | ⭐ Beginner | 5-10 min | Build a command-line TODO app with persistent storage |
+| [02_file_processor](./agents/general_agent/examples/02_file_processor) | ⭐⭐ Intermediate | 10-15 min | Create CSV/JSON processor using custom skills |
+| [03_bug_hunter](./agents/general_agent/examples/03_bug_hunter) | ⭐⭐⭐ Advanced | 15-20 min | Production bug detection with OWASP/CWE analysis |
+| [04_circle_packing](./agents/general_agent/examples/04_circle_packing) | ⭐⭐⭐⭐ Expert | 20-30 min | Geometric optimization with custom evaluation |
+
+**Key Features:**
+- 📚 **Progressive Learning**: From beginner to expert in 4 examples
+- 🎯 **Custom Skills**: Domain knowledge packages guide agent behavior
+- 🔧 **Production Tools**: 3 real Python analysis tools (~1400 lines)
+- 📖 **Comprehensive Docs**: ~2250 lines of tutorials and guides
+
+👉 **Get Started**: Follow the [Complete Tutorial](./agents/general_agent/TUTORIAL.md) for step-by-step learning
 
 ### Mathematical Challenges (Tao’s & AlphaEvolve sets)
 

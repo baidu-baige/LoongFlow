@@ -1,0 +1,232 @@
+# ============================================================================
+# Bug Hunter - Quickstart Example 03
+# ============================================================================
+# This example teaches you how to build an AI-powered bug detection agent
+# Goal: Analyze code, find bugs, get user approval, and implement fixes
+
+# Output directory for this task
+workspace_path: "./output-bug-hunter"
+
+# LLM Configuration
+llm_config:
+  model: "anthropic/deepseek-v3.2"
+
+# ------------------------------------------------------------------------------
+# Component Configuration with Code Analysis Skill
+# ------------------------------------------------------------------------------
+
+# Planner: Uses code-analysis skill for systematic bug detection
+planners:
+  general_planner:
+    skills: ["code-analysis"]  # 🎯 Load bug hunting skill
+    permission_mode: "acceptEdits"
+    max_turns: 50
+
+# Executor: Implements bug fixes after user approval
+executors:
+  general_executor:
+    skills: ["code-analysis"]
+    permission_mode: "acceptEdits"
+    max_turns: 50
+
+# Summarizer: Reflects on fixes and extracts lessons
+summarizers:
+  general_summarizer:
+    skills: []
+    permission_mode: "acceptEdits"
+    max_turns: 30
+
+# ------------------------------------------------------------------------------
+# Evolution Process Configuration
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description - building a bug hunting and fixing agent
+  task: |
+    You are a Bug Hunter Agent. Your mission is to analyze a codebase, identify bugs and issues,
+    and propose fixes. The workflow consists of two phases:
+
+    ## Phase 1: Bug Detection and Reporting
+
+    ### 1.1 Analyze the Codebase
+    The sample codebase is located at:
+    `agents/general_agent/examples/03_bug_hunter/sample_codebase/`
+
+    Read and analyze these files:
+    - user_manager.py: User management system
+    - database_helper.py: Database operations
+    - api_utils.py: API utility functions
+
+    ### 1.2 Identify All Issues
+
+    **IMPORTANT**: You have access to powerful analysis tools! Use them to assist your analysis:
+
+    ```bash
+    # Run static analyzer for comprehensive bug detection
+    python .claude/skills/code-analysis/scripts/static_analyzer.py agents/general_agent/examples/03_bug_hunter/sample_codebase/
+
+    # Run security scanner for vulnerability detection
+    python .claude/skills/code-analysis/scripts/security_scanner.py agents/general_agent/examples/03_bug_hunter/sample_codebase/
+
+    # Run performance profiler on individual files
+    python .claude/skills/code-analysis/scripts/performance_profiler.py agents/general_agent/examples/03_bug_hunter/sample_codebase/user_manager.py
+    ```
+
+    These tools will help you find:
+    - **Security vulnerabilities**: SQL injection, plain text passwords, hardcoded credentials
+    - **Logic bugs**: Null checks, off-by-one errors, wrong conditions
+    - **Resource leaks**: Unclosed files, connections, missing commits
+    - **Performance issues**: Inefficient algorithms, N+1 queries
+    - **Code quality**: Exception handling, mutable defaults, global state
+
+    You should:
+    1. Run the tools to get automated detection results
+    2. Manually review the code to find issues tools might miss
+    3. Combine automated and manual findings for comprehensive analysis
+
+    ### 1.3 Generate Bug Report
+    Create a comprehensive bug report file: `BUG_REPORT.md`
+
+    Structure:
+    ```markdown
+    # Code Analysis Report
+
+    ## Executive Summary
+    - Files analyzed: X
+    - Total issues found: Y
+    - Critical: N (security vulnerabilities, data loss risks)
+    - High: N (crashes, logic errors)
+    - Medium: N (performance, resource leaks)
+    - Low: N (code quality improvements)
+
+    ## Critical Issues
+
+    ### Issue #1: [Brief Title]
+    **File**: `file.py:line_number`
+    **Severity**: Critical
+    **Category**: Security | Bug | Performance | Quality
+
+    **Description**:
+    [Clear explanation of the problem]
+
+    **Current Code**:
+    ```python
+    # Problematic code
+    ```
+
+    **Problem**:
+    [Why this is dangerous/broken]
+
+    **Impact**:
+    - [What could go wrong]
+    - [Example failure scenario]
+
+    **Recommended Fix**:
+    ```python
+    # Fixed code
+    ```
+
+    **Explanation**:
+    [Why this fix solves the problem]
+
+    ---
+
+    [Repeat for each issue, organized by severity]
+
+    ## Recommendations
+    1. **Immediate Actions** (Critical issues)
+       - Fix #1, #2, #3 immediately
+
+    2. **Short-term Actions** (High priority)
+       - Address issues #4, #5, #6 soon
+
+    3. **Long-term Improvements** (Medium/Low)
+       - Refactor code quality issues
+       - Add comprehensive tests
+    ```
+
+    ## Phase 2: Implementing Fixes
+
+    ### 2.1 Create Fixed Versions
+    For each bug you identified, create fixed versions of the files in a `fixed_code/` directory:
+    - fixed_code/user_manager.py
+    - fixed_code/database_helper.py
+    - fixed_code/api_utils.py
+
+    ### 2.2 Fixing Guidelines
+    - Fix one category of bugs at a time (e.g., all SQL injections first)
+    - Add comments explaining each fix:
+      ```python
+      # FIXED: Added parameterized query to prevent SQL injection
+      cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+      ```
+    - Preserve original functionality (don't refactor unnecessarily)
+    - Ensure fixes don't introduce new bugs
+
+    ### 2.3 Document All Changes
+    Create a `CHANGES.md` file that summarizes all fixes:
+    ```markdown
+    # Changes Summary
+
+    ## Security Fixes
+    - Fixed SQL injection in database_helper.py:20, 35, 42
+    - Replaced plain text passwords with bcrypt hashing
+    - Removed hardcoded credentials
+
+    ## Bug Fixes
+    - Fixed off-by-one error in user_manager.py:58
+    - Added null checks in user_manager.py:72, database_helper.py:15
+    - Fixed resource leak in user_manager.py:18
+
+    ## Performance Improvements
+    - Optimized user search with dictionary lookup
+    - Fixed N+1 query problem in api_utils.py:15
+
+    ## Code Quality
+    - Added proper exception handling
+    - Fixed mutable default arguments
+    - Added logging instead of print statements
+    ```
+
+    ## Deliverables
+
+    You must create:
+    1. `BUG_REPORT.md` - Comprehensive analysis of all issues
+    2. `fixed_code/` directory - All fixed Python files with comments
+    3. `CHANGES.md` - Summary of all changes made
+
+    ## Important Notes
+
+    - Be thorough: The sample code has 38 intentional bugs
+    - Categorize by severity: Critical > High > Medium > Low
+    - Be specific: Always include file:line_number references
+    - Explain clearly: Users need to understand why something is a bug
+    - Show before/after: Include code examples in the report
+    - Fix properly: Don't introduce new bugs while fixing old ones
+
+    Use the code-analysis skill to guide your systematic approach!
+
+  # Component selection
+  planner_name: "general_planner"
+  executor_name: "general_executor"
+  summary_name: "general_summarizer"
+
+  # Evolution parameters
+  max_iterations: 30        # Bug hunting is complex, needs iterations
+  target_score: 0.90        # High quality threshold
+  concurrency: 1
+
+  # Evaluator configuration
+  evaluator:
+    timeout: 900  # 15 minutes for thorough evaluation
+    agent:
+      skills: ["code-analysis"]
+      permission_mode: "acceptEdits"
+      max_turns: 40
+
+  # Database configuration
+  database:
+    storage_type: "in_memory"
+    num_islands: 1
+    population_size: 30
+    checkpoint_interval: 3
+    sampling_weight_power: 2

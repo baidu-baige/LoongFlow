@@ -1,0 +1,99 @@
+# ============================================================================
+# TODO List App - Quickstart Example
+# ============================================================================
+# This is the simplest example to help you understand how General Agent works.
+# Goal: Create a command-line TODO list application in Python
+
+# Output directory for this task
+workspace_path: "./output-todo-list"
+
+# LLM Configuration
+# You can also set ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL environment variables
+llm_config:
+  model: "anthropic/deepseek-v3.2"
+
+# ------------------------------------------------------------------------------
+# Component Configuration
+# ------------------------------------------------------------------------------
+
+# Planner: Creates implementation plan
+planners:
+  general_planner:
+    permission_mode: "acceptEdits"  # Auto-approve file operations
+    max_turns: 30
+
+# Executor: Implements the code based on the plan
+executors:
+  general_executor:
+    permission_mode: "acceptEdits"
+    max_turns: 30
+
+# Summarizer: Reflects on the implementation and extracts insights
+summarizers:
+  general_summarizer:
+    permission_mode: "acceptEdits"
+    max_turns: 20
+
+# ------------------------------------------------------------------------------
+# Evolution Process Configuration
+# ------------------------------------------------------------------------------
+evolve:
+  # Task description - what you want the agent to build
+  task: |
+    Create a simple command-line TODO list application in Python with the following features:
+
+    1. Core Functionality:
+       - Add new TODO items with a description
+       - Mark TODO items as completed
+       - Delete TODO items
+       - List all TODO items (show status: pending/completed)
+
+    2. Data Persistence:
+       - Save TODO items to a JSON file (todos.json)
+       - Load existing TODOs when the program starts
+
+    3. User Interface:
+       - Simple command-line interface with menu options
+       - Clear instructions for each operation
+       - Handle invalid input gracefully
+
+    4. Code Quality:
+       - Use functions to organize code
+       - Add basic error handling
+       - Include comments for key sections
+       - Keep it simple - single file is fine
+
+    5. Example Usage:
+       The program should support interactions like:
+       - "1" to add a new TODO
+       - "2" to mark a TODO as completed
+       - "3" to delete a TODO
+       - "4" to list all TODOs
+       - "5" to exit
+
+    Create a working implementation that a beginner can easily understand and run.
+
+  # Component selection
+  planner_name: "general_planner"
+  executor_name: "general_executor"
+  summary_name: "general_summarizer"
+
+  # Evolution parameters
+  max_iterations: 30        # Stop after 30 iterations
+  target_score: 0.85        # Stop if score reaches 0.85
+  concurrency: 1            # Run 1 evolution at a time (simple for beginners)
+
+  # Evaluator: Tests and scores the generated code
+  evaluator:
+    timeout: 300  # 5 minutes timeout for evaluation
+    agent:
+      permission_mode: "acceptEdits"
+      max_turns: 20
+
+  # Database: Stores evolution history and best solutions
+  database:
+    storage_type: "in_memory"  # Use in-memory storage (simpler for quickstart)
+    num_islands: 1             # Single population
+    population_size: 30        # Keep track of 30 solutions
+    checkpoint_interval: 5     # Save checkpoint every 5 iterations
+    sampling_weight_power: 2   # Balance exploration vs exploitation
