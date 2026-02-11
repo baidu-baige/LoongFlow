@@ -457,8 +457,9 @@ def api_get_task(task_id: str):
         details = service.get_task_details(task_id)
         return jsonify({"success": True, "task": details})
     except ValueError as e:
-        # ValueError is safe to expose (e.g., "Task not found")
-        return jsonify({"success": False, "error": str(e)}), 404
+        # Log the original error but return a generic safe message
+        app.logger.warning(f"Task not found: {task_id} - {str(e)}")
+        return jsonify({"success": False, "error": "Task not found"}), 404
     except Exception as e:
         # Log the full error internally but return a safe message to users
         app.logger.error(f"Error getting task {task_id}: {str(e)}")
@@ -472,8 +473,9 @@ def api_get_iteration(task_id: str, iteration: int):
         details = service.get_iteration_details(task_id, iteration)
         return jsonify({"success": True, "iteration": details})
     except ValueError as e:
-        # ValueError is safe to expose (e.g., "Iteration not found")
-        return jsonify({"success": False, "error": str(e)}), 404
+        # Log the original error but return a generic safe message
+        app.logger.warning(f"Iteration not found: {task_id}/{iteration} - {str(e)}")
+        return jsonify({"success": False, "error": "Iteration not found"}), 404
     except Exception as e:
         # Log the full error internally but return a safe message to users
         app.logger.error(f"Error getting iteration {iteration} for task {task_id}: {str(e)}")
@@ -487,8 +489,9 @@ def api_get_file(task_id: str, iteration: int, filepath: str):
         file_data = service.get_file_content(task_id, iteration, filepath)
         return jsonify({"success": True, "file": file_data})
     except ValueError as e:
-        # ValueError is safe to expose (e.g., "File not found")
-        return jsonify({"success": False, "error": str(e)}), 404
+        # Log the original error but return a generic safe message
+        app.logger.warning(f"File not found: {task_id}/{iteration}/{filepath} - {str(e)}")
+        return jsonify({"success": False, "error": "File not found"}), 404
     except Exception as e:
         # Log the full error internally but return a safe message to users
         app.logger.error(f"Error getting file {filepath} from task {task_id} iteration {iteration}: {str(e)}")
