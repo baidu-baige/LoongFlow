@@ -42,7 +42,6 @@ def apply_llm_config(api_key: Optional[str], url: Optional[str]) -> None:
         )
 
     os.environ["ANTHROPIC_API_KEY"] = final_api_key
-    logger.debug(f"Set ANTHROPIC_API_KEY to: {final_api_key}")
 
     # Handle base URL
     final_url = url or os.getenv("ANTHROPIC_BASE_URL")
@@ -53,7 +52,6 @@ def apply_llm_config(api_key: Optional[str], url: Optional[str]) -> None:
         )
 
     os.environ["ANTHROPIC_BASE_URL"] = final_url
-    logger.debug(f"Set ANTHROPIC_BASE_URL to: {final_url}")
 
 
 class ClaudeCodeAgent(AgentBase):

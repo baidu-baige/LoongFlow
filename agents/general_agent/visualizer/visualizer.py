@@ -445,7 +445,9 @@ def api_list_tasks():
         tasks = service.list_tasks()
         return jsonify({"success": True, "tasks": tasks})
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        # Log the full error internally but return a safe message to users
+        app.logger.error(f"Error listing tasks: {str(e)}")
+        return jsonify({"success": False, "error": "Failed to list tasks"}), 500
 
 
 @app.route("/api/tasks/<path:task_id>")
@@ -454,8 +456,13 @@ def api_get_task(task_id: str):
     try:
         details = service.get_task_details(task_id)
         return jsonify({"success": True, "task": details})
-    except Exception as e:
+    except ValueError as e:
+        # ValueError is safe to expose (e.g., "Task not found")
         return jsonify({"success": False, "error": str(e)}), 404
+    except Exception as e:
+        # Log the full error internally but return a safe message to users
+        app.logger.error(f"Error getting task {task_id}: {str(e)}")
+        return jsonify({"success": False, "error": "Failed to get task details"}), 500
 
 
 @app.route("/api/tasks/<path:task_id>/iterations/<int:iteration>")
@@ -464,8 +471,13 @@ def api_get_iteration(task_id: str, iteration: int):
     try:
         details = service.get_iteration_details(task_id, iteration)
         return jsonify({"success": True, "iteration": details})
-    except Exception as e:
+    except ValueError as e:
+        # ValueError is safe to expose (e.g., "Iteration not found")
         return jsonify({"success": False, "error": str(e)}), 404
+    except Exception as e:
+        # Log the full error internally but return a safe message to users
+        app.logger.error(f"Error getting iteration {iteration} for task {task_id}: {str(e)}")
+        return jsonify({"success": False, "error": "Failed to get iteration details"}), 500
 
 
 @app.route("/api/tasks/<path:task_id>/iterations/<int:iteration>/files/<path:filepath>")
@@ -474,8 +486,13 @@ def api_get_file(task_id: str, iteration: int, filepath: str):
     try:
         file_data = service.get_file_content(task_id, iteration, filepath)
         return jsonify({"success": True, "file": file_data})
-    except Exception as e:
+    except ValueError as e:
+        # ValueError is safe to expose (e.g., "File not found")
         return jsonify({"success": False, "error": str(e)}), 404
+    except Exception as e:
+        # Log the full error internally but return a safe message to users
+        app.logger.error(f"Error getting file {filepath} from task {task_id} iteration {iteration}: {str(e)}")
+        return jsonify({"success": False, "error": "Failed to get file content"}), 500
 
 
 # ------------------------------------------------------------------
