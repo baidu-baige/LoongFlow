@@ -61,6 +61,8 @@ class CoderResult:
     name: str = ""
     code: str = ""
     artifacts: dict[str, Any] = field(default_factory=dict)
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 class MLExecutorAgent(Worker):
@@ -133,6 +135,10 @@ class MLExecutorAgent(Worker):
 
             Path(best_evaluation_path).write_text(evaluation.to_json())
 
+            # Calculate total token usage from all stages
+            total_prompt_tokens = sum(r.prompt_tokens for r in solutions.values())
+            total_completion_tokens = sum(r.completion_tokens for r in solutions.values())
+
             # 4. Return a success message with the results.
             return Message.from_media(
                 sender="MLExecutor",
@@ -144,6 +150,8 @@ class MLExecutorAgent(Worker):
                     "parent_info_file_path": execution_ctx.parent_info_file_path,
                     "best_solution_file_path": str(best_code_path),
                     "best_evaluation_file_path": best_evaluation_path,
+                    "total_prompt_tokens": total_prompt_tokens,
+                    "total_completion_tokens": total_completion_tokens,
                 },
             )
         except Exception as e:
@@ -331,10 +339,17 @@ class MLExecutorAgent(Worker):
         if not code:
             raise RuntimeError(f"{stage} code generate not found")
         artifacts = content[0].metadata.get("artifacts", {}).get(stage.value, {})
+
+        # Extract token usage from EvoCoder response
+        prompt_tokens = response_message.metadata.get("total_prompt_tokens", 0)
+        completion_tokens = response_message.metadata.get("total_completion_tokens", 0)
+
         return CoderResult(
             name=stage.value,
             code=code,
             artifacts=artifacts,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
         )
 
     async def _evaluate(

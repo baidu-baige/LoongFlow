@@ -155,7 +155,7 @@ class MLSummaryAgent(Worker):
         )
 
         evidence = await self._gather(context, message)
-        analysis = await self._reflect(context, evidence)
+        analysis, total_prompt_tokens, total_completion_tokens = await self._reflect(context, evidence)
         await self._record(context, evidence, analysis)
         return Message.from_media(
             sender="MLSummaryAgent",
@@ -165,6 +165,8 @@ class MLSummaryAgent(Worker):
                 "best_summary_file_path": Workspace.get_summarizer_best_summary_path(
                     context
                 ),
+                "total_prompt_tokens": total_prompt_tokens,
+                "total_completion_tokens": total_completion_tokens,
             },
         )
 
@@ -235,8 +237,13 @@ class MLSummaryAgent(Worker):
             ),
         )
 
-    async def _reflect(self, context: Context, evidence: Evidence) -> Reflection:
+    async def _reflect(self, context: Context, evidence: Evidence) -> tuple[Reflection, int, int]:
+        """
+        Reflect on the evidence and generate a summary.
 
+        Returns:
+            A tuple of (reflection, total_prompt_tokens, total_completion_tokens).
+        """
         parent_solution = ""
         if evidence.parent_info.solution_id:
             parent_solution = json.dumps(
@@ -261,6 +268,8 @@ class MLSummaryAgent(Worker):
             )
         )
         agent = await self._create_agent(self.model)
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
         try:
             agent.context.toolkit.register_tool(
                 GetBestSolutionsTool(solutions.simplify_solution(
@@ -271,6 +280,8 @@ class MLSummaryAgent(Worker):
             result = await agent.run(
                 Message.from_text(prompt), trace_id=context.trace_id
             )
+            total_prompt_tokens = result.metadata.get("total_prompt_tokens", 0)
+            total_completion_tokens = result.metadata.get("total_completion_tokens", 0)
             content = result.get_elements(ContentElement)
             if not content or len(content) == 0 or not content[0].data:
                 raise ValueError("No summary result generated")
@@ -283,7 +294,7 @@ class MLSummaryAgent(Worker):
         logger.info(
             f"Trace ID: {context.trace_id}: Summary: reflection result: {reflection.model_dump()}"
         )
-        return reflection
+        return reflection, total_prompt_tokens, total_completion_tokens
 
     async def _record(
         self, context: Context, evidence: Evidence, reflection: Reflection

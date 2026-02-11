@@ -82,16 +82,25 @@ class EvoCoder(AgentBase):
         messages = self.context_provider.provide(task_config)
         stage = self.context_provider.stage()
 
+        # Token usage tracking
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
+
         for attempt_num in range(self.config.max_rounds):
             logger.info(
                 f"EvoCoder: Starting attempt for {stage} at {attempt_num + 1}/{self.config.max_rounds}."
             )
 
             # generate code
-            code_message = await self._generate_code(stage, messages)
+            code_message, usage = await self._generate_code(stage, messages)
             if not code_message:
                 continue
             messages.append(code_message)
+
+            # Accumulate token usage
+            if usage:
+                total_prompt_tokens += getattr(usage, "prompt_tokens", 0)
+                total_completion_tokens += getattr(usage, "completion_tokens", 0)
 
             # extract code
             try:
@@ -144,14 +153,23 @@ class EvoCoder(AgentBase):
                             metadata={"artifacts": eval_result.artifacts},
                         )
                     ],
+                    metadata={
+                        "total_prompt_tokens": total_prompt_tokens,
+                        "total_completion_tokens": total_completion_tokens,
+                    },
                 )
 
             logger.warning(
                 f"Code validation for {stage} evaluated failed on attempt {attempt_num + 1},"
                 f"evaluation result: {eval_result}"
             )
-            msg = await self.solve_evaluation_fail(stage, eval_result)
+            msg, install_usage = await self.solve_evaluation_fail(stage, eval_result)
             messages.append(msg)
+
+            # Accumulate token usage from package installation
+            if install_usage:
+                total_prompt_tokens += getattr(install_usage, "prompt_tokens", 0)
+                total_completion_tokens += getattr(install_usage, "completion_tokens", 0)
 
         # Step 4: If the loop finishes without success, return a failure message
         logger.error(
@@ -162,6 +180,10 @@ class EvoCoder(AgentBase):
             role=Role.USER,
             mime_type=MimeType.APPLICATION_JSON,
             data={},
+            metadata={
+                "total_prompt_tokens": total_prompt_tokens,
+                "total_completion_tokens": total_completion_tokens,
+            },
         )
 
     async def interrupt_impl(self):
@@ -174,8 +196,12 @@ class EvoCoder(AgentBase):
 
     async def _generate_code(
         self, stage: Stage, messages: list[Message]
-    ) -> Message | None:
-        """Generate code from LLM and extract it."""
+    ) -> tuple[Message | None, any]:
+        """Generate code from LLM and extract it.
+
+        Returns:
+            A tuple of (message, usage) where usage contains token statistics.
+        """
         llm_request = CompletionRequest(messages=messages)
         resp_generator = self.model.generate(llm_request)
 
@@ -186,7 +212,7 @@ class EvoCoder(AgentBase):
                     f"EvoCoder generate code for {stage} failed, "
                     f"error code: {resp.error_code}, error: {resp.error_message}"
                 )
-                return None
+                return None, None
         finally:
             async for _ in resp_generator:
                 pass
@@ -196,7 +222,7 @@ class EvoCoder(AgentBase):
             role=Role.ASSISTANT,
             elements=list(resp.content),
             metadata={"usage": resp.usage},
-        )
+        ), resp.usage
 
     def _extract_code(self, code_message: Message) -> Message | str:
         code_content = code_message.get_elements(ContentElement)
@@ -223,9 +249,12 @@ class EvoCoder(AgentBase):
 
     async def solve_evaluation_fail(
         self, stage: Stage, eval_result: EvaluationResult
-    ) -> Message:
+    ) -> tuple[Message, any]:
         """
         solve evaluation failed message
+
+        Returns:
+            A tuple of (message, usage) where usage contains token statistics from package installation.
         """
         error_details = eval_result.to_dict()
 
@@ -235,20 +264,24 @@ class EvoCoder(AgentBase):
                 sender="EvoCoder",
                 role=Role.USER,
                 data=f"code run failed: {json.dumps(error_details, ensure_ascii=False)}",
-            )
+            ), None
 
         logger.info(
             f"Code evaluate for {stage} detect Missing package: {missing_package}, try to install it"
         )
-        result = await self.install_missing_package(eval_result)
+        result, usage = await self.install_missing_package(eval_result)
         return Message.from_text(
             sender="EvoCoder",
             role=Role.USER,
             data=f"trying to install missing package: {missing_package}, install result: {result}",
-        )
+        ), usage
 
     async def install_missing_package(self, evaluation_result: EvaluationResult):
-        """Install missing package."""
+        """Install missing package.
+
+        Returns:
+            A tuple of (result, usage) where usage contains token statistics.
+        """
         user_message = Message.from_text(
             sender="user",
             role=Role.USER,
@@ -260,8 +293,10 @@ class EvoCoder(AgentBase):
         llm_request = CompletionRequest(messages=[user_message])
 
         resp_generator = self.model.generate(llm_request)
+        usage = None
         try:
             resp = await anext(resp_generator)
+            usage = resp.usage
             if resp.error_code:
                 raise Exception(
                     f"Error code: {resp.error_code}, error: {resp.error_message}"
@@ -278,7 +313,7 @@ class EvoCoder(AgentBase):
 
         if not cmd:
             logger.warning(f"EvoCoder: No command generated")
-            return "No command generated, package not installed"
+            return "No command generated, package not installed", usage
         try:
             logger.info(f"EvoCoder: Installing missing package: {cmd}")
             result = subprocess.run(
@@ -291,10 +326,10 @@ class EvoCoder(AgentBase):
                 stderr=subprocess.PIPE,
             )
             logger.info(f"EvoCoder: Installed result: {result}")
-            return result
+            return result, usage
         except Exception as e:
             logger.error(f"EvoCoder: Error installing package: {e}")
-            return str(e)
+            return str(e), usage
 
 
 def parse_full_rewrite(llm_response: str, language: str = "python") -> Optional[str]:

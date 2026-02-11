@@ -36,7 +36,9 @@ class EDAToolArgs(BaseModel):
 
 
 def build_eda_tool(
-    context: Context, evocoder_config_factory: Callable[[], EvoCoderConfig]
+    context: Context,
+    evocoder_config_factory: Callable[[], EvoCoderConfig],
+    token_usage: dict[str, int] = None,
 ) -> FunctionTool:
     """
     Factory function to build a context-aware EDATool.
@@ -44,6 +46,8 @@ def build_eda_tool(
     Args:
         context: The runtime context of the LoongFlow agent, providing task-specific details.
         evocoder_config_factory: The configuration factory for the underlying EvoCoder instance.
+        token_usage: Optional dict to accumulate token usage statistics.
+                     If provided, will be updated with {"prompt_tokens": N, "completion_tokens": M}.
 
     Returns:
         A fully configured FunctionTool ready to be used by a ReAct agent.
@@ -93,6 +97,11 @@ def build_eda_tool(
             result_message = await evocoder(message=message)
         finally:
             evocoder_config.evaluator.interrupt()
+
+        # Accumulate token usage if tracker provided
+        if token_usage is not None:
+            token_usage["prompt_tokens"] = token_usage.get("prompt_tokens", 0) + result_message.metadata.get("total_prompt_tokens", 0)
+            token_usage["completion_tokens"] = token_usage.get("completion_tokens", 0) + result_message.metadata.get("total_completion_tokens", 0)
 
         content = result_message.get_elements(ContentElement)
         if not content or len(content) == 0:

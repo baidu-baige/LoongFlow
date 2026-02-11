@@ -93,6 +93,10 @@ class MLPlannerAgent(Worker):
         """
 
         agent = await self._create_agent(self.model)
+
+        # Token usage tracker for EDA tool
+        eda_token_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+
         # register eda_tool
         agent.context.toolkit.register_tool(
             build_eda_tool(
@@ -111,6 +115,7 @@ class MLPlannerAgent(Worker):
                         )
                     ),
                 ),
+                token_usage=eda_token_usage,
             )
         )
         # register select_solution_for_ensemble tool
@@ -203,6 +208,8 @@ class MLPlannerAgent(Worker):
             "eda_info_file_path": str(utils.get_current_eda_info_path(context)),
             "eda_code_file_path": str(utils.get_current_eda_code_path(context)),
             "model_assemble_file_path": str(utils.get_assemble_model_path(context)),
+            "total_prompt_tokens": result.metadata.get("total_prompt_tokens", 0) + eda_token_usage.get("prompt_tokens", 0),
+            "total_completion_tokens": result.metadata.get("total_completion_tokens", 0) + eda_token_usage.get("completion_tokens", 0),
         }
 
         logger.info(
