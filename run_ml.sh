@@ -106,6 +106,19 @@ get_descendants() {
     done
 }
 
+has_usable_nvidia_gpu() {
+    if ! command -v nvidia-smi >/dev/null 2>&1; then
+        return 1
+    fi
+
+    # Require at least one enumerated GPU device, not just a runnable command.
+    if nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | grep -qE '^[0-9]+'; then
+        return 0
+    fi
+
+    return 1
+}
+
 # Check if environment exists
 check_env_exists() {
     if ! mamba env list | grep -q "${ENV_NAME} "; then
@@ -121,7 +134,7 @@ do_init() {
     # --- Detect GPU availability ---
     local env_file
     local pip_file
-    if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+    if has_usable_nvidia_gpu; then
         info "Detected NVIDIA GPU, using GPU environment"
         env_file="$SCRIPT_DIR/agents/ml_agent/examples/environment_gpu.yaml"
         pip_file="$SCRIPT_DIR/agents/ml_agent/examples/requirements_gpu.txt"

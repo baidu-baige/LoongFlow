@@ -11,7 +11,7 @@ set -o pipefail
 # Usage:
 #   ./run_mlebench.sh init
 #   ./run_mlebench.sh prepare <competition_id>
-#   ./run_mlebench.sh run <competition_id> [--background] [other Python parameters]
+#   ./run_mlebench.sh run <competition_id> [--background] [--debug] [other Python parameters]
 #   ./run_mlebench.sh stop <competition_id>
 # =============================================================================
 
@@ -108,6 +108,104 @@ get_descendants() {
     done
 }
 
+grade_latest_best_submission() {
+    local competition_id="$1"
+    local checkpoints_root="$OUTPUT_DIR/database/checkpoints"
+    local helper_script="$SCRIPT_DIR/agents/ml_agent/examples/mlebench/checkpoint_submission_locator.py"
+
+    if [ ! -d "$checkpoints_root" ]; then
+        warning "Checkpoint root not found, skip grading: $checkpoints_root"
+        return 0
+    fi
+
+    if [ ! -f "$helper_script" ]; then
+        warning "Checkpoint helper script not found, skip grading: $helper_script"
+        return 0
+    fi
+
+    local latest_checkpoint
+    latest_checkpoint="$(
+        python3 "$helper_script" --checkpoints-root "$checkpoints_root" --field checkpoint_path 2>&1
+    )"
+    if [ $? -ne 0 ]; then
+        warning "Failed to locate latest checkpoint: $latest_checkpoint"
+        return 0
+    fi
+
+    local submission_path
+    submission_path="$(
+        python3 "$helper_script" --checkpoints-root "$checkpoints_root" --field submission_file_path 2>&1
+    )"
+    if [ $? -ne 0 ]; then
+        warning "Failed to extract submission_file_path: $submission_path"
+        return 0
+    fi
+
+    if [ ! -f "$submission_path" ]; then
+        local candidate="$SCRIPT_DIR/$submission_path"
+        if [ -f "$candidate" ]; then
+            submission_path="$candidate"
+        else
+            warning "Submission file not found: $submission_path"
+            return 0
+        fi
+    fi
+
+    info "Grading latest best submission from checkpoint:"
+    info "  checkpoint: $latest_checkpoint"
+    info "  submission: $submission_path"
+
+    local cmd_output
+    if command -v mlebench >/dev/null 2>&1; then
+        if cmd_output=$(mlebench grade-sample --data-dir "$MLEBENCH_DIR" "$submission_path" "$competition_id" 2>&1); then
+            success "mlebench grade-sample completed."
+            echo "$cmd_output"
+        else
+            warning "mlebench grade-sample failed."
+            echo "$cmd_output"
+        fi
+        return 0
+    fi
+
+    if command -v mamba >/dev/null 2>&1; then
+        if cmd_output=$(mamba run -n "$ENV_NAME" mlebench grade-sample --data-dir "$MLEBENCH_DIR" "$submission_path" "$competition_id" 2>&1); then
+            success "mamba run mlebench grade-sample completed."
+            echo "$cmd_output"
+        else
+            warning "mamba run mlebench grade-sample failed."
+            echo "$cmd_output"
+        fi
+        return 0
+    fi
+
+    if command -v conda >/dev/null 2>&1; then
+        if cmd_output=$(conda run -n "$ENV_NAME" mlebench grade-sample --data-dir "$MLEBENCH_DIR" "$submission_path" "$competition_id" 2>&1); then
+            success "conda run mlebench grade-sample completed."
+            echo "$cmd_output"
+        else
+            warning "conda run mlebench grade-sample failed."
+            echo "$cmd_output"
+        fi
+        return 0
+    fi
+
+    warning "Cannot find mlebench/conda/mamba command, skip grading."
+    return 0
+}
+
+has_usable_nvidia_gpu() {
+    if ! command -v nvidia-smi >/dev/null 2>&1; then
+        return 1
+    fi
+
+    # Require at least one enumerated GPU device, not just a runnable command.
+    if nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | grep -qE '^[0-9]+'; then
+        return 0
+    fi
+
+    return 1
+}
+
 # Check if the environment exists
 check_env_exists() {
     if ! mamba env list | grep -q "${ENV_NAME}"; then
@@ -123,7 +221,7 @@ do_init() {
     # --- Check if GPU is available ---
     local env_file
     local pip_file
-    if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+    if has_usable_nvidia_gpu; then
         info "Detected NVIDIA GPU, using GPU environment"
         env_file="$SCRIPT_DIR/agents/ml_agent/examples/environment_gpu.yaml"
         pip_file="$SCRIPT_DIR/agents/ml_agent/examples/requirements_gpu.txt"
@@ -280,11 +378,14 @@ do_run() {
 
     # --- Parameter parsing ---
     local run_in_background=false
+    local debug_mode=false
     local python_args=()
 
     for arg in "${@:2}"; do
         if [ "$arg" == "--background" ]; then
             run_in_background=true
+        elif [ "$arg" == "--debug" ]; then
+            debug_mode=true
         else
             python_args+=("$arg")
         fi
@@ -295,6 +396,11 @@ do_run() {
 
     # --- Set PYTHONPATH ---
     export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$SCRIPT_DIR:$SCRIPT_DIR/src"
+
+    # --- Debug evaluator switch ---
+    if [ "$debug_mode" = true ]; then
+        export MLEBENCH_COMPUTE_TEST_SCORE=true
+    fi
 
     # --- Construct the command array ---
     local command_array=(
@@ -316,6 +422,7 @@ do_run() {
     echo "📁 Task Data: $task_data_path"
     echo "📝 Config: $agent_config_path"
     echo "🔧 Evaluator: $eval_program"
+    echo "🧪 Debug Test Score: $MLEBENCH_COMPUTE_TEST_SCORE"
     echo "🚀 Command: ${command_array[*]}"
     echo "=================================================================="
 
@@ -342,6 +449,9 @@ do_stop() {
     if [ -z "$competition_id" ]; then
         error "Competition ID is required for the 'stop' command."
     fi
+
+    # Check if the environment exists
+    check_env_exists
 
     local competition_dir="$MLEBENCH_DIR/$competition_id"
     local pid_file="$competition_dir/.agent.pid"
@@ -405,6 +515,11 @@ do_stop() {
 
     # Perform global cleanup
     do_global_cleanup
+
+    # Activate environment
+    activate_env
+
+    grade_latest_best_submission "$competition_id"
 }
 
 do_global_cleanup() {
@@ -424,7 +539,7 @@ if [ $# -lt 1 ]; then
     echo "Commands:"
     echo "  init                        Initialize MLE-Bench environment"
     echo "  prepare <competition_id>    Download and prepare competition data"
-    echo "  run <competition_id> [opts] Run agent (use --background for background mode)"
+    echo "  run <competition_id> [opts] Run agent (supports --background, --debug)"
     echo "  stop <competition_id>       Stop running agent"
     echo ""
     echo "Environment: $ENV_NAME"
@@ -433,6 +548,7 @@ if [ $# -lt 1 ]; then
     echo "  $0 init"
     echo "  $0 prepare spooky-author-identification"
     echo "  $0 run spooky-author-identification --background"
+    echo "  $0 run spooky-author-identification --debug"
     echo "  $0 stop spooky-author-identification"
     exit 1
 fi

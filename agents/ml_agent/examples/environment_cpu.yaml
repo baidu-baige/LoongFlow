@@ -1,7 +1,6 @@
 name: loongflow_ml
 channels:
   - conda-forge
-  - pytorch
   - defaults
 
 dependencies:
@@ -15,9 +14,9 @@ dependencies:
   - git
 
   # ==================== 3. PyTorch & RAPIDS ====================
-  - pytorch::pytorch=2.4.0
-  - pytorch::torchvision=0.19.0
-  - pytorch::torchaudio=2.4.0
+  - pytorch=2.4.0
+  - torchvision=0.19.0
+  - torchaudio=2.4.0
 
   - py-xgboost=2.1
   - lightgbm=4.5.0

@@ -1172,7 +1172,10 @@ def workflow() -> dict:
     Returns:
         dict: A dictionary containing all task deliverables.
               Required keys:
-              - 'submission_file_path': Path to the final submission CSV
+              - 'submission_file_path': Path to the final test set submission CSV
+              - 'oof_submission_file_path': Path to the OOF (out-of-fold) submission CSV
+              - 'oof_answer_file_path': Path to the OOF ground-truth file aligned with OOF rows
+              - 'oof_coverage': Fraction of train rows covered by OOF predictions, value in [0.0, 1.0]
               - 'prediction_stats': Prediction distribution statistics (see format below)
 
               Optional keys:
@@ -1180,7 +1183,9 @@ def workflow() -> dict:
 
     Requirements:
         - **MUST call `load_data(validation_mode=False)` to load the full dataset**
-        - Submission format must strictly follow the required format
+        - The final test submission and OOF submission must use the SAME prediction column schema
+        - The OOF submission file should use training set IDs and contain OOF predictions
+        - The OOF answer file should align row-by-row with OOF submission and can contain extra columns
         - Return value must be JSON-serializable (primitive types, lists, dicts only)
         - Save any non-serializable objects (models, arrays, DataFrames) to files under `{{output_data_path}}`
         - Do not attempt fallback handling that could mask issues affecting output quality — let errors propagate
@@ -1209,12 +1214,19 @@ def workflow() -> dict:
     #      b. Apply preprocess() to this fold
     #      c. Train each model and collect val + test predictions
     # 4. Ensemble predictions from all models
-    # 5. Compute prediction statistics
-    # 6. Generate deliverables (submission file, scores, etc.)
+    # 5. Compute prediction statistics for both OOF and test predictions
+    # 6. Generate deliverables:
+    #      a. Test submission file (using test set IDs and test predictions)
+    #      b. OOF submission file (using training set IDs and OOF predictions)
+    #      c. OOF answer file (aligned with OOF rows, containing ground-truth targets)
+    #      d. OOF coverage ratio in [0.0, 1.0]
     # 7. Save artifacts to files and return paths in a JSON-serializable dict
 
     output_info = {
-        "submission_file_path": "path/to/submission.csv",
+        "submission_file_path": "path/to/submission.csv",           # Test set submission
+        "oof_submission_file_path": "path/to/oof_submission.csv",  # OOF prediction submission
+        "oof_answer_file_path": "path/to/oof_answer.csv",          # OOF aligned ground-truth file
+        "oof_coverage": float(xx),                                 # Coverage ratio in [0.0, 1.0]
         "prediction_stats": {
             "oof": {"mean": float(xx), "std": float(xx), "min": float(xx), "max": float(xx)},
             "test": {"mean": float(xx), "std": float(xx), "min": float(xx), "max": float(xx)},

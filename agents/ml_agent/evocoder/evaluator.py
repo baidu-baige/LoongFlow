@@ -758,7 +758,13 @@ def evaluate(temp_dir):
         assert isinstance(result, dict), "The workflow() function must return a dict."
 
         # check required keys
-        REQUIRED_KEYS = ["submission_file_path", "prediction_stats"]
+        REQUIRED_KEYS = [
+            "submission_file_path",
+            "oof_submission_file_path",
+            "oof_answer_file_path",
+            "oof_coverage",
+            "prediction_stats",
+        ]
         missing_keys = [k for k in REQUIRED_KEYS if k not in result]
         if missing_keys:
             return {{
@@ -766,6 +772,123 @@ def evaluate(temp_dir):
                 "status": "validation_failed",
                 "summary": f"Missing required keys in workflow result: {{missing_keys}}",
                 "artifacts": {{"workflow": result}}
+            }}
+
+        # check submission files exist
+        submission_file = result.get("submission_file_path")
+        if not os.path.isfile(submission_file):
+            return {{
+                "score": 0.0,
+                "status": "validation_failed",
+                "summary": f"Test submission file not found: {{submission_file}}",
+                "artifacts": {{"workflow": result}}
+            }}
+
+        oof_submission_file = result.get("oof_submission_file_path")
+        if not os.path.isfile(oof_submission_file):
+            return {{
+                "score": 0.0,
+                "status": "validation_failed",
+                "summary": f"OOF submission file not found: {{oof_submission_file}}",
+                "artifacts": {{"workflow": result}}
+            }}
+
+        oof_answer_file = result.get("oof_answer_file_path")
+        if not os.path.isfile(oof_answer_file):
+            return {{
+                "score": 0.0,
+                "status": "validation_failed",
+                "summary": f"OOF answer file not found: {{oof_answer_file}}",
+                "artifacts": {{"workflow": result}}
+            }}
+
+        oof_coverage = result.get("oof_coverage")
+        if isinstance(oof_coverage, bool) or not isinstance(oof_coverage, (int, float)):
+            return {{
+                "score": 0.0,
+                "status": "validation_failed",
+                "summary": f"oof_coverage must be numeric in [0,1], got {{type(oof_coverage).__name__}}",
+                "artifacts": {{"workflow": result}}
+            }}
+        oof_coverage = float(oof_coverage)
+        if oof_coverage < 0.0 or oof_coverage > 1.0:
+            return {{
+                "score": 0.0,
+                "status": "validation_failed",
+                "summary": f"oof_coverage must be in [0,1], got {{oof_coverage}}",
+                "artifacts": {{"workflow": result}}
+            }}
+
+        # csv-level validation
+        try:
+            submission_df = pd.read_csv(submission_file)
+            oof_submission_df = pd.read_csv(oof_submission_file)
+            oof_answer_df = pd.read_csv(oof_answer_file)
+        except Exception as e:
+            return {{
+                "score": 0.0,
+                "status": "validation_failed",
+                "summary": f"Failed to read workflow csv artifacts: {{e}}",
+                "artifacts": {{"workflow": result}}
+            }}
+
+        if submission_df.empty:
+            return {{
+                "score": 0.0,
+                "status": "validation_failed",
+                "summary": "Final submission csv is empty.",
+                "artifacts": {{"workflow": result}}
+            }}
+        if oof_submission_df.empty:
+            return {{
+                "score": 0.0,
+                "status": "validation_failed",
+                "summary": "OOF submission csv is empty.",
+                "artifacts": {{"workflow": result}}
+            }}
+        if oof_answer_df.empty:
+            return {{
+                "score": 0.0,
+                "status": "validation_failed",
+                "summary": "OOF answer csv is empty.",
+                "artifacts": {{"workflow": result}}
+            }}
+
+        # final submission and oof submission should share the same prediction schema
+        submission_cols = list(submission_df.columns)
+        oof_submission_cols = list(oof_submission_df.columns)
+        if submission_cols != oof_submission_cols:
+            return {{
+                "score": 0.0,
+                "status": "validation_failed",
+                "summary": "Column mismatch between final submission and OOF submission.",
+                "artifacts": {{
+                    "workflow": result,
+                    "final_submission_columns": submission_cols,
+                    "oof_submission_columns": oof_submission_cols,
+                }}
+            }}
+
+        # oof submission and oof answer should align row-wise
+        if len(oof_submission_df) != len(oof_answer_df):
+            return {{
+                "score": 0.0,
+                "status": "validation_failed",
+                "summary": f"Row count mismatch: oof_submission={{len(oof_submission_df)}}, oof_answer={{len(oof_answer_df)}}",
+                "artifacts": {{"workflow": result}}
+            }}
+
+        missing_answer_cols = [col for col in oof_submission_cols if col not in oof_answer_df.columns]
+        if missing_answer_cols:
+            return {{
+                "score": 0.0,
+                "status": "validation_failed",
+                "summary": f"oof_answer_file_path is missing required submission columns: {{missing_answer_cols}}",
+                "artifacts": {{
+                    "workflow": result,
+                    "oof_submission_columns": oof_submission_cols,
+                    "oof_answer_columns": list(oof_answer_df.columns),
+                }}
             }}
         # check prediction_stats structure
         prediction_stats = result["prediction_stats"]
@@ -806,9 +929,9 @@ def evaluate(temp_dir):
                         "artifacts": {{"workflow": result}}
                     }}
         return {{
-            "score": 1.0, 
-            "status": "success", 
-            "summary": "workflow validation passed and submission file created.",
+            "score": 1.0,
+            "status": "success",
+            "summary": "workflow validation passed and submission files created.",
             "artifacts": {{"workflow": result}}
         }}
 
