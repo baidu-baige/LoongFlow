@@ -9,7 +9,7 @@ namespaces = true
 
 [project]
 name = "loongflow"
-version = "0.0.1"
+version = "0.0.2"
 description = "agent"
 authors = [{ name = "loongflow", email = "loongflow@baidu.com" }]
 readme = "README.md"
