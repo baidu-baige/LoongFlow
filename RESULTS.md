@@ -7,6 +7,7 @@
 | Not run yet | Research phase only | Linux host `dsw-383994-58767c9899-2q7sk`; Python 3.13.11 outside benchmark env | Not configured | N/A | Not started | N/A | No benchmark execution yet; environment and evaluator mismatches still being resolved |
 | Environment init (`run_mlebench.sh init`) | Canonical GPU path with `conda` fallback patch; upstream GPU env manifest | 8x NVIDIA L20Z; system Python 3.13.11; `conda` 25.11.1 | N/A | ~4s | Failed | No environment created | Blocked before solve/install because Conda requires accepting Terms of Service for upstream `defaults` channels |
 | `detecting-insults-in-social-commentary` prepare | Canonical `run_mlebench.sh prepare` path in `loongflow_ml` | 8x NVIDIA L20Z; `loongflow_ml` active via script | N/A | ~6s | Failed | No dataset prepared | MLE-Bench launched correctly; credential file is found, but Kaggle returns `401 Unauthorized` on API access |
+| `detecting-insults-in-social-commentary` prepare retry | Canonical `run_mlebench.sh prepare` path in `loongflow_ml` after auth fix | 8x NVIDIA L20Z; `loongflow_ml` active via script | N/A | ~7s | Failed | No dataset prepared | Kaggle auth now works, but competition download is blocked by unaccepted competition rules, and MLE-Bench exits on non-interactive prompt |
 
 ## Expected evaluation behavior
 

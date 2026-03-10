@@ -52,20 +52,20 @@ Current reproduction target:
 
 ## In-progress step
 
-Replace or regenerate the Kaggle API token, then retry `./run_mlebench.sh prepare detecting-insults-in-social-commentary`.
+Accept the Kaggle competition rules for `detecting-insults-in-social-commentary`, then retry `./run_mlebench.sh prepare detecting-insults-in-social-commentary`.
 
 ## Next 3 steps
 
-1. Regenerate Kaggle API credentials and overwrite `/newcpfs/lxh/vibe-kanban/config/kaggle/kaggle.json`.
-2. Validate auth with a direct Kaggle API call from `loongflow_ml`.
-3. Re-run `./run_mlebench.sh prepare detecting-insults-in-social-commentary`.
+1. Open the Kaggle competition page for `detecting-insults-in-social-commentary` and accept the competition rules with the same account tied to the API token.
+2. Re-run `./run_mlebench.sh prepare detecting-insults-in-social-commentary`.
+3. If prepare succeeds, start the first tracked benchmark run for the same competition.
 
 ## Known blockers
 
 - No LLM API credentials are configured yet in the benchmark task config template.
 - `run_mlebench.sh init` required a local compatibility patch because `mamba` is not installed.
 - MLE-Bench dataset preparation will likely require Kaggle API credentials and network access.
-- Kaggle credentials are visible and readable, but Kaggle returns `401 Unauthorized` on authenticated API calls from `loongflow_ml`.
+- Kaggle API auth now works, but Kaggle returns `403` for competition download until the competition rules are accepted.
 - Packaged competition solutions appear to use hard-coded absolute data/output paths from the authors' environment.
 - The evaluator/workflow artifact contract mismatch may block faithful reuse of packaged competition workflows without controlled adjustments.
 
@@ -83,7 +83,7 @@ Replace or regenerate the Kaggle API token, then retry `./run_mlebench.sh prepar
 - Current active reproduction attempt:
   - `detecting-insults-in-social-commentary` is the first chosen competition for real benchmark preparation and execution.
 - Current concrete blocker for that competition:
-  - `prepare` reaches MLE-Bench correctly, but fails before download because the current Kaggle username/key pair is being rejected by Kaggle.
+  - `prepare` reaches Kaggle correctly, but the download is blocked until the competition rules are accepted on the Kaggle website.
 - Known uncertainties:
   - whether the current repo state is internally consistent enough to rerun packaged competition workflows unchanged,
   - whether a faithful run requires external MLE-Bench data preparation plus live LLM access,

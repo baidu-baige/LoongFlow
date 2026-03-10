@@ -2,9 +2,9 @@
 
 ## Highest priority
 
-1. Regenerate the Kaggle API token and overwrite `/newcpfs/lxh/vibe-kanban/config/kaggle/kaggle.json`.
-2. Validate Kaggle auth from `loongflow_ml` with a direct API call.
-3. Re-run `./run_mlebench.sh prepare detecting-insults-in-social-commentary` and capture the full outcome.
+1. Accept the Kaggle rules for `detecting-insults-in-social-commentary` in the browser with the same Kaggle account used for the API token.
+2. Re-run `./run_mlebench.sh prepare detecting-insults-in-social-commentary` and capture the full outcome.
+3. If prepare succeeds, verify `prepared/public/description.md` and the expected dataset files exist.
 
 ## Next
 
