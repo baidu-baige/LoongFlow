@@ -223,3 +223,17 @@
   - This is no longer a path or file-shape issue.
   - The current Kaggle username/key pair is being rejected by Kaggle itself.
   - Recommended next action: regenerate the Kaggle API token from the Kaggle account settings, update `kaggle.json`, and validate with a direct API call before retrying `prepare`.
+
+## 2026-03-10T09:54:49Z
+
+- Action taken: Re-validated Kaggle API access after the user refreshed the token.
+- Command(s):
+  - `conda run -n loongflow_ml python -c "from kaggle.api.kaggle_api_extended import KaggleApi; api=KaggleApi(); api.authenticate(); print(api.competitions_list(page=1, search='titanic')[:1])"`
+- Output summary:
+  - The direct Kaggle API validation still fails.
+  - Kaggle returns `401 Unauthorized` / `Unauthenticated`.
+- Artifact paths:
+  - `/newcpfs/lxh/vibe-kanban/config/kaggle/kaggle.json`
+- Interpretation:
+  - The latest credential update has not fixed the upstream Kaggle authentication problem.
+  - MLE-Bench `prepare` should not be retried until the direct Kaggle API validation succeeds.
