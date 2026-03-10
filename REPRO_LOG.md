@@ -143,3 +143,60 @@
   - The benchmark shell path itself is now runnable on this host.
   - The next blocker is external to the repo: Conda channel Terms of Service.
   - Recommended next action: either accept the required Conda channel ToS and retry init, or explicitly switch to a `conda-forge`-only environment as a documented reproduction deviation.
+
+## 2026-03-10T09:17:09Z
+
+- Action taken: Validated that the benchmark environment now exists locally and selected the first real competition target.
+- Command(s):
+  - `git status --short`
+  - `conda env list`
+  - `ls -l ~/.kaggle/kaggle.json`
+  - `env | rg '^KAGGLE'`
+  - `find $HOME -maxdepth 3 -name kaggle.json 2>/dev/null`
+  - `conda run -n loongflow_ml python -c "import os; print(os.path.expanduser('~'))"`
+- Output summary:
+  - `loongflow_ml` exists.
+  - local `mle-bench/` directory exists and is currently untracked in git.
+  - Kaggle credentials are not visible at `~/.kaggle/kaggle.json`, not exposed via `KAGGLE_*` env vars, and not discoverable under the current `$HOME`.
+  - The effective home directory inside `loongflow_ml` is `/newcpfs/lxh/vibe-kanban/home`.
+- Artifact paths:
+  - `mle-bench/`
+- Interpretation:
+  - Environment initialization appears to have succeeded since the earlier blocked attempt.
+  - The next likely failure mode for `prepare` is Kaggle authentication or credential path visibility.
+
+## 2026-03-10T09:17:09Z
+
+- Action taken: Pre-run note for the first real benchmark data preparation attempt.
+- Command(s):
+  - Planned: `./run_mlebench.sh prepare detecting-insults-in-social-commentary`
+- Output summary:
+  - This step is necessary to move from environment reproduction to competition-specific benchmark reproduction.
+  - Expected success signals: competition data downloaded under `output/mlebench/detecting-insults-in-social-commentary/prepared/public`, including `description.md`.
+  - Expected failure modes: Kaggle auth failure, dataset access restrictions, or MLE-Bench command/runtime issues.
+- Artifact paths:
+  - `output/mlebench/detecting-insults-in-social-commentary/`
+- Interpretation:
+  - This is the smallest meaningful benchmark step after environment creation.
+
+## 2026-03-10T09:18:29Z
+
+- Action taken: Post-run note for `./run_mlebench.sh prepare detecting-insults-in-social-commentary`.
+- Command(s):
+  - `./run_mlebench.sh prepare detecting-insults-in-social-commentary`
+  - `ls -la /newcpfs/lxh/vibe-kanban/config/kaggle`
+  - `find output/mlebench/detecting-insults-in-social-commentary -maxdepth 3 -type f`
+- Output summary:
+  - `run_mlebench.sh prepare` activated `loongflow_ml` successfully.
+  - `mlebench prepare` started and attempted to download the dataset.
+  - Kaggle auth failed before download.
+  - The concrete lookup path reported by MLE-Bench is `/newcpfs/lxh/vibe-kanban/config/kaggle`.
+  - That directory exists but currently contains no `kaggle.json`.
+  - No prepared dataset files were created under `output/mlebench/detecting-insults-in-social-commentary/`.
+- Artifact paths:
+  - `output/mlebench/detecting-insults-in-social-commentary/`
+  - `/newcpfs/lxh/vibe-kanban/config/kaggle/`
+- Interpretation:
+  - The benchmark environment and `mlebench` CLI are working.
+  - The next unblocker is not generic Kaggle setup; it is placing credentials where this runtime actually expects them.
+  - Recommended next action: copy or symlink `kaggle.json` into `/newcpfs/lxh/vibe-kanban/config/kaggle/`, then retry `prepare`.

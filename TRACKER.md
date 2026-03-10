@@ -10,7 +10,7 @@ Reproduce the LoongFlow Kaggle / MLE-Bench benchmark setting in a way that is tr
 
 ## Current status
 
-Research stage completed for the repo-local benchmark map. First expensive setup attempt completed and failed on an external environment prerequisite.
+Research stage completed for the repo-local benchmark map. The benchmark environment now appears to exist locally, and the first competition target has been selected.
 
 Current benchmark structure identified:
 - Canonical Kaggle benchmark entrypoint: `./run_mlebench.sh`
@@ -35,6 +35,11 @@ Important repo-local discrepancies already found:
 - Host has 8x NVIDIA L20Z GPUs, so the canonical script will choose the GPU environment by default.
 - Conda environment creation is blocked by unaccepted Terms of Service for `https://repo.anaconda.com/pkgs/main` and `https://repo.anaconda.com/pkgs/r`.
 
+Current reproduction target:
+- Competition: `detecting-insults-in-social-commentary`
+- Tier: `simple`
+- Current action: benchmark `prepare` step
+
 ## Completed steps
 
 - Located the benchmark entrypoints, setup scripts, task config template, evaluator, and ML agent runner.
@@ -47,21 +52,20 @@ Important repo-local discrepancies already found:
 
 ## In-progress step
 
-Resolve the Conda Terms-of-Service blocker for the canonical benchmark environment init, or decide on a documented divergence from the upstream channel configuration.
+Fix Kaggle credential visibility for MLE-Bench, then retry `./run_mlebench.sh prepare detecting-insults-in-social-commentary`.
 
 ## Next 3 steps
 
-1. Decide whether to accept Conda channel Terms of Service for the upstream `defaults` channels or remove those channels as a documented fidelity deviation.
-2. Re-run `./run_mlebench.sh init` after the ToS/channel decision.
-3. If init succeeds, attempt `./run_mlebench.sh prepare <competition_id>` and record whether Kaggle credentials become the next blocker.
+1. Place `kaggle.json` where MLE-Bench expects it: `/newcpfs/lxh/vibe-kanban/config/kaggle/kaggle.json`, or expose equivalent Kaggle env vars.
+2. Re-run `./run_mlebench.sh prepare detecting-insults-in-social-commentary`.
+3. If prepare succeeds, start the first tracked benchmark run for the same competition.
 
 ## Known blockers
 
 - No LLM API credentials are configured yet in the benchmark task config template.
 - `run_mlebench.sh init` required a local compatibility patch because `mamba` is not installed.
-- `run_mlebench.sh init` is currently blocked by Conda Terms-of-Service acceptance for `defaults` channels.
 - MLE-Bench dataset preparation will likely require Kaggle API credentials and network access.
-- Kaggle credentials are currently absent on this host.
+- Kaggle credentials are not visible to MLE-Bench; it specifically looks for `kaggle.json` under `/newcpfs/lxh/vibe-kanban/config/kaggle/`.
 - Packaged competition solutions appear to use hard-coded absolute data/output paths from the authors' environment.
 - The evaluator/workflow artifact contract mismatch may block faithful reuse of packaged competition workflows without controlled adjustments.
 
@@ -76,6 +80,10 @@ Resolve the Conda Terms-of-Service blocker for the canonical benchmark environme
   - added a minimal `conda` fallback to `run_mlebench.sh` so the canonical shell path can run on this host without `mamba`.
 - Current failed reproduction attempt:
   - `./run_mlebench.sh init` started successfully but stopped before dependency resolution because Conda refused access to the upstream `defaults` channels until Terms of Service are accepted.
+- Current active reproduction attempt:
+  - `detecting-insults-in-social-commentary` is the first chosen competition for real benchmark preparation and execution.
+- Current concrete blocker for that competition:
+  - `prepare` reaches MLE-Bench correctly, but fails before download because Kaggle auth is missing from the path MLE-Bench is using.
 - Known uncertainties:
   - whether the current repo state is internally consistent enough to rerun packaged competition workflows unchanged,
   - whether a faithful run requires external MLE-Bench data preparation plus live LLM access,

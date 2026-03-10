@@ -2,15 +2,15 @@
 
 ## Highest priority
 
-1. Resolve the Conda ToS blocker for `defaults` channels, or explicitly decide to remove `defaults` from the environment manifests as a fidelity tradeoff.
-2. Re-run `./run_mlebench.sh init` and capture the full outcome.
-3. If init succeeds, choose a small text competition for the first data preparation attempt.
+1. Put `kaggle.json` at `/newcpfs/lxh/vibe-kanban/config/kaggle/kaggle.json` or set the Kaggle env-var method MLE-Bench accepts.
+2. Re-run `./run_mlebench.sh prepare detecting-insults-in-social-commentary` and capture the full outcome.
+3. If prepare succeeds, verify `prepared/public/description.md` and the expected dataset files exist.
 
 ## Next
 
-4. If prepare is blocked by missing Kaggle credentials, document the blocker precisely and decide the best partial reproduction scope.
-5. Produce a concrete pre-run plan for the first `prepare` attempt, including chosen competition, expected logs, and success criteria.
-6. If benchmark data becomes available, configure LLM credentials and attempt one LoongFlow MLE-Bench agent run.
+4. If prepare succeeds, run the first tracked benchmark attempt for the same competition.
+5. If benchmark data becomes available, configure LLM credentials and attempt one LoongFlow MLE-Bench agent run.
+6. After the first simple competition, continue with the remaining planned simple / medium / hard set.
 
 ## If blocked
 
