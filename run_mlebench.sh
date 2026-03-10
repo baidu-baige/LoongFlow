@@ -39,6 +39,20 @@ error() {
     exit 1
 }
 
+get_env_manager() {
+    if command -v mamba >/dev/null 2>&1; then
+        echo "mamba"
+        return 0
+    fi
+
+    if command -v conda >/dev/null 2>&1; then
+        echo "conda"
+        return 0
+    fi
+
+    error "Neither conda nor mamba found. Please install mambaforge or miniconda first."
+}
+
 # Initialize conda/mamba for shell usage
 init_conda() {
     # Find conda/mamba installation
@@ -208,7 +222,9 @@ has_usable_nvidia_gpu() {
 
 # Check if the environment exists
 check_env_exists() {
-    if ! mamba env list | grep -q "${ENV_NAME}"; then
+    local env_manager
+    env_manager="$(get_env_manager)"
+    if ! "$env_manager" env list | grep -q "${ENV_NAME}"; then
         error "Environment '$ENV_NAME' not found. Please run '$0 init' first."
     fi
 }
@@ -236,19 +252,22 @@ do_init() {
         error "Environment file not found: $env_file"
     fi
 
-    # --- Check if mamba is available ---
-    if ! command -v mamba >/dev/null 2>&1; then
-        error "mamba is not installed. Please install mambaforge or mamba first."
+    local env_manager
+    env_manager="$(get_env_manager)"
+    if [ "$env_manager" = "mamba" ]; then
+        info "Using environment manager: mamba"
+    else
+        warning "mamba not found. Falling back to conda for environment creation."
     fi
 
     info "Target environment name: $ENV_NAME"
 
     # --- Create or update the conda environment ---
-    if mamba env list | grep -q "${ENV_NAME} "; then
+    if "$env_manager" env list | grep -q "${ENV_NAME} "; then
         warning "Environment '$ENV_NAME' already exists. skip"
     else
         info "Creating new environment from $env_file..."
-        mamba env create -n "$ENV_NAME" -f "$env_file"
+        "$env_manager" env create -n "$ENV_NAME" -f "$env_file"
     fi
 
     success "Conda environment '$ENV_NAME' is ready."
@@ -300,7 +319,7 @@ do_init() {
     echo ""
     echo "=================================================================="
     info "To activate the environment, run:"
-    echo "    mamba activate $ENV_NAME"
+    echo "    conda activate $ENV_NAME"
     echo "=================================================================="
 }
 
