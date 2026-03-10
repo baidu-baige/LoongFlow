@@ -200,3 +200,26 @@
   - The benchmark environment and `mlebench` CLI are working.
   - The next unblocker is not generic Kaggle setup; it is placing credentials where this runtime actually expects them.
   - Recommended next action: copy or symlink `kaggle.json` into `/newcpfs/lxh/vibe-kanban/config/kaggle/`, then retry `prepare`.
+
+## 2026-03-10T09:35:39Z
+
+- Action taken: Diagnosed the Kaggle authentication failure from inside `loongflow_ml`.
+- Command(s):
+  - `ls -l /newcpfs/lxh/vibe-kanban/config/kaggle/kaggle.json`
+  - `stat /newcpfs/lxh/vibe-kanban/config/kaggle/kaggle.json`
+  - `python3 ...` to verify JSON keys without printing secrets
+  - `conda run -n loongflow_ml python -c "..."` to verify file readability
+  - `conda run -n loongflow_ml python -c "from kaggle.api.kaggle_api_extended import KaggleApi; ..."`
+  - `cd mle-bench && conda run -n loongflow_ml python -c "from mlebench.utils import authenticate_kaggle_api; ..."`
+- Output summary:
+  - `kaggle.json` exists, is readable, has the expected keys, and contains non-empty values.
+  - Basic `KaggleApi().authenticate()` can initialize when the config dir is set.
+  - The first real Kaggle API request (`competitions_list`) fails with `401 Unauthorized`.
+  - MLE-Bench fails in exactly the same way because it calls `api.competitions_list()` after authentication.
+- Artifact paths:
+  - `/newcpfs/lxh/vibe-kanban/config/kaggle/kaggle.json`
+  - `mle-bench/mlebench/utils.py`
+- Interpretation:
+  - This is no longer a path or file-shape issue.
+  - The current Kaggle username/key pair is being rejected by Kaggle itself.
+  - Recommended next action: regenerate the Kaggle API token from the Kaggle account settings, update `kaggle.json`, and validate with a direct API call before retrying `prepare`.

@@ -52,20 +52,20 @@ Current reproduction target:
 
 ## In-progress step
 
-Fix Kaggle credential visibility for MLE-Bench, then retry `./run_mlebench.sh prepare detecting-insults-in-social-commentary`.
+Replace or regenerate the Kaggle API token, then retry `./run_mlebench.sh prepare detecting-insults-in-social-commentary`.
 
 ## Next 3 steps
 
-1. Place `kaggle.json` where MLE-Bench expects it: `/newcpfs/lxh/vibe-kanban/config/kaggle/kaggle.json`, or expose equivalent Kaggle env vars.
-2. Re-run `./run_mlebench.sh prepare detecting-insults-in-social-commentary`.
-3. If prepare succeeds, start the first tracked benchmark run for the same competition.
+1. Regenerate Kaggle API credentials and overwrite `/newcpfs/lxh/vibe-kanban/config/kaggle/kaggle.json`.
+2. Validate auth with a direct Kaggle API call from `loongflow_ml`.
+3. Re-run `./run_mlebench.sh prepare detecting-insults-in-social-commentary`.
 
 ## Known blockers
 
 - No LLM API credentials are configured yet in the benchmark task config template.
 - `run_mlebench.sh init` required a local compatibility patch because `mamba` is not installed.
 - MLE-Bench dataset preparation will likely require Kaggle API credentials and network access.
-- Kaggle credentials are not visible to MLE-Bench; it specifically looks for `kaggle.json` under `/newcpfs/lxh/vibe-kanban/config/kaggle/`.
+- Kaggle credentials are visible and readable, but Kaggle returns `401 Unauthorized` on authenticated API calls from `loongflow_ml`.
 - Packaged competition solutions appear to use hard-coded absolute data/output paths from the authors' environment.
 - The evaluator/workflow artifact contract mismatch may block faithful reuse of packaged competition workflows without controlled adjustments.
 
@@ -83,7 +83,7 @@ Fix Kaggle credential visibility for MLE-Bench, then retry `./run_mlebench.sh pr
 - Current active reproduction attempt:
   - `detecting-insults-in-social-commentary` is the first chosen competition for real benchmark preparation and execution.
 - Current concrete blocker for that competition:
-  - `prepare` reaches MLE-Bench correctly, but fails before download because Kaggle auth is missing from the path MLE-Bench is using.
+  - `prepare` reaches MLE-Bench correctly, but fails before download because the current Kaggle username/key pair is being rejected by Kaggle.
 - Known uncertainties:
   - whether the current repo state is internally consistent enough to rerun packaged competition workflows unchanged,
   - whether a faithful run requires external MLE-Bench data preparation plus live LLM access,
