@@ -140,7 +140,22 @@ class MLPlannerAgent(Worker):
             f"Trace ID: {context.trace_id}: MLPlanner: Get sample parent solution: {parent}"
         )
 
-        parent_dict = parent if parent else {}
+        # Prepare initial solution as fallback when memory is empty
+        init_solution = context.init_solution
+        init_evaluation = context.init_evaluation or ""
+        init_score = 0.0
+        if context.init_score is not None:
+            init_score = context.init_score
+
+        init_parent = {
+            "solution": init_solution,
+            "score": init_score,
+            "evaluation": init_evaluation,
+            "summary": "This is the initial solution provided by user, start evolution from here",
+        }
+
+        # Use init_parent as fallback when no solution exists in memory
+        parent_dict = parent if parent else (init_parent if init_solution else {})
         parent_json = json.dumps(parent_dict, ensure_ascii=False, indent=2)
         Workspace.write_planner_parent_info(context, parent_json)
         parent_info_file_path = Workspace.get_planner_parent_info_path(context)
