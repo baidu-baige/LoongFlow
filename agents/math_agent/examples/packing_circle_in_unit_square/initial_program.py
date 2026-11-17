@@ -146,6 +146,6 @@ if __name__ == "__main__":
 
     result_valid = check_construction(centers, radii, 26)
     if result_valid["sum_of_radii"] > -np.inf:
-        sys.exit(1)
-    else:
         sys.exit(0)
+    else:
+        sys.exit(1)
